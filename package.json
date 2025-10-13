@@ -30,6 +30,7 @@
     "postgres": "^3.4.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "swapy": "^1.0.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {

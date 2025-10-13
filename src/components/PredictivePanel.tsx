@@ -1,18 +1,24 @@
 "use client";
 import { useEffect, useState } from "react";
 
+import { Prediction } from "@/types";
+
 export default function PredictivePanel() {
-  const [prediction, setPrediction] = useState<string>("");
+  const [predictions, setPredictions] = useState<Prediction[]>([]);
 
   useEffect(() => {
-    // TODO: fetch prediction from API route
-    setPrediction("Se prevé liberar 5 camas antes de las 14:00h. Tiempo promedio de limpieza: 45 min.");
+    fetch("/api/predictions")
+      .then((res) => res.json())
+      .then((data: Prediction[]) => setPredictions(data))
+      .catch(() => setPredictions([]));
   }, []);
 
   return (
     <section className="bg-white/10 rounded-xl p-6 text-white shadow">
       <h3 className="text-xl font-bold mb-4">Analítica Predictiva</h3>
-      <p>{prediction}</p>
+      {predictions.map((pred) => (
+        <p key={pred.id}>{pred.description}</p>
+      ))}
     </section>
   );
 }

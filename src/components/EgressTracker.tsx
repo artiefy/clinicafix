@@ -1,22 +1,22 @@
 "use client";
 import { useEffect, useState } from "react";
 
-interface Egress {
-  patient: string;
-  bedId: number;
-  status: "En Proceso" | "Completado" | "Pendiente";
-  expectedTime: string;
+import { Discharge } from "@/types";
+
+function formatHour(date: Date | string | null | undefined) {
+  if (!date) return "";
+  const d = new Date(date);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 export default function EgressTracker() {
-  const [egresses, setEgresses] = useState<Egress[]>([]);
+  const [discharges, setDischarges] = useState<Discharge[]>([]);
 
   useEffect(() => {
-    // TODO: fetch egress data from API route
-    setEgresses([
-      { patient: "Juan Pérez", bedId: 1, status: "En Proceso", expectedTime: "13:30" },
-      { patient: "Ana Gómez", bedId: 3, status: "Pendiente", expectedTime: "14:00" },
-    ]);
+    fetch("/api/discharges")
+      .then((res) => res.json())
+      .then((data: Discharge[]) => setDischarges(data))
+      .catch(() => setDischarges([]));
   }, []);
 
   return (
@@ -32,23 +32,23 @@ export default function EgressTracker() {
           </tr>
         </thead>
         <tbody>
-          {egresses.map((egress, idx) => (
-            <tr key={idx}>
-              <td>{egress.patient}</td>
-              <td>{egress.bedId}</td>
+          {discharges.map((discharge) => (
+            <tr key={discharge.id}>
+              <td>{discharge.patient}</td>
+              <td>{discharge.bed_id}</td>
               <td>
                 <span
-                  className={`px-2 py-1 rounded ${egress.status === "Completado"
-                      ? "bg-green-600"
-                      : egress.status === "En Proceso"
-                        ? "bg-blue-600"
-                        : "bg-yellow-500"
+                  className={`px-2 py-1 rounded ${discharge.status === "Completado"
+                    ? "bg-green-600"
+                    : discharge.status === "En Proceso"
+                      ? "bg-blue-600"
+                      : "bg-yellow-500"
                     }`}
                 >
-                  {egress.status}
+                  {discharge.status}
                 </span>
               </td>
-              <td>{egress.expectedTime}</td>
+              <td>{formatHour(discharge.expected_time)}</td>
             </tr>
           ))}
         </tbody>
