@@ -21,7 +21,7 @@ export const beds = createTable(
     room: d.varchar({ length: 32 }),
     lastUpdate: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
   }),
-  (t) => [index("status_idx").on(t.status)],
+  (t) => [index("beds_status_idx").on(t.status)], // Renamed index to avoid duplication
 );
 
 // Tabla de egresos
@@ -35,7 +35,7 @@ export const discharges = createTable(
     expectedTime: d.timestamp({ withTimezone: true }),
     createdAt: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
   }),
-  (t) => [index("status_idx").on(t.status)],
+  (t) => [index("discharges_status_idx").on(t.status)], // Renamed index to avoid duplication
 );
 
 export const posts = createTable(
