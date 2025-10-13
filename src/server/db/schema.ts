@@ -12,6 +12,32 @@ import { index, pgTableCreator } from "drizzle-orm/pg-core";
  */
 export const createTable = pgTableCreator((name) => `icesi_${name}`);
 
+// Tabla de camas
+export const beds = createTable(
+  "beds",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    status: d.varchar({ length: 32 }).notNull(), // Disponible, Ocupada, Limpieza, Reservada
+    room: d.varchar({ length: 32 }),
+    lastUpdate: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("status_idx").on(t.status)],
+);
+
+// Tabla de egresos
+export const discharges = createTable(
+  "discharges",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    patient: d.varchar({ length: 128 }).notNull(),
+    bedId: d.integer().notNull().references(() => beds.id),
+    status: d.varchar({ length: 32 }).notNull(), // Pendiente, En Proceso, Completado
+    expectedTime: d.timestamp({ withTimezone: true }),
+    createdAt: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("status_idx").on(t.status)],
+);
+
 export const posts = createTable(
   "post",
   (d) => ({
