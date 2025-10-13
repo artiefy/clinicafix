@@ -1,0 +1,132 @@
+{
+  // Editor Configuration
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+  "editor.codeActionsOnSave": {
+    "source.fixAll": "explicit",
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "never"
+  },
+  "editor.linkedEditing": true,
+  "editor.stickyScroll.enabled": true,
+  // File Configuration
+  "files.autoSave": "afterDelay",
+  "files.associations": {
+    "*.css": "tailwindcss",
+    "*.env": "env",
+    "*.env.production": "env",
+    "*.jsx": "javascriptreact",
+    "*.tsx": "typescriptreact",
+    "*.ts": "typescript",
+    "*.mjs": "javascript",
+    "*.js": "javascript",
+    "*.json": "json",
+    "*.svg": "svg",
+    "*.xml": "html",
+    "*.html": "html",
+    "*.config.mjs": "javascript",
+    "*.config.js": "javascript",
+    "*.config.ts": "typescript",
+    "*.md": "markdown",
+    "*.mdx": "mdx",
+    "*.lock": "json",
+    "*.sh": "shellscript",
+    "*.bash": "shell"
+  },
+  "files.watcherExclude": {
+    "/node_modules/": true,
+    "/dist/": true,
+    "/.git/": true
+  },
+  // Language-specific Formatters
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "vscode.typescript-language-features"
+  },
+  "[env]": {
+    "editor.defaultFormatter": "IronGeek.vscode-env"
+  },
+  "[env.production]": {
+    "editor.defaultFormatter": "IronGeek.vscode-env"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "vscode.json-language-features"
+  },
+  "[svg]": {
+    "editor.defaultFormatter": "jock.svg"
+  },
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[shellscript]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  },
+  // TypeScript Configuration
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.tsserver.maxTsServerMemory": 8192,
+  // ESLint Configuration
+  "eslint.runtime": "C:/Users/Usuario/AppData/Local/fnm_multishells/41556_1760378899890/node",
+  "eslint.validate": [
+    "javascript",
+    "javascriptreact",
+    "typescript",
+    "typescriptreact"
+  ],
+  "eslint.codeActionsOnSave.mode": "problems",
+  "eslint.rules.customizations": [
+    {
+      "rule": "import/named",
+      "severity": "off"
+    },
+    {
+      "rule": "no-unused-vars",
+      "severity": "off"
+    },
+    {
+      "rule": "simple-import-sort/imports",
+      "severity": "off"
+    },
+    {
+      "rule": "simple-import-sort/exports",
+      "severity": "off"
+    }
+  ],
+  // Tailwind CSS Configuration
+  "tailwindCSS.includeLanguages": {
+    "typescript": "javascript",
+    "typescriptreact": "javascript"
+  },
+  "css.validate": false,
+  "tailwindCSS.validate": true,
+  "tailwindCSS.showPixelEquivalents": true,
+  "tailwindCSS.colorDecorators": true,
+  "tailwindCSS.lint.recommendedVariantOrder": "warning",
+  // Search and Performance
+  "search.exclude": {
+    "/node_modules": true,
+    "/dist": true,
+    "/.git": true
+  },
+  "javascript.suggest.completeFunctionCalls": true,
+  "typescript.tsserver.experimental.enableProjectDiagnostics": true,
+  "svg.preview.background": "editor",
+  "[ignore]": {
+    "editor.defaultFormatter": "foxundermoon.shell-format"
+  }
+}
