@@ -9,23 +9,37 @@ export default function EgressTracker() {
   const [beds, setBeds] = useState<Bed[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
 
+  // Polling: re-fetch every 5s so table updates in "real time"
   useEffect(() => {
-    // fetch discharges + beds + rooms so we can show habitación (room number) per discharge
-    Promise.all([
-      fetch("/api/discharges").then((r) => r.json() as Promise<Discharge[]>),
-      fetch("/api/beds").then((r) => r.json() as Promise<Bed[]>),
-      fetch("/api/rooms").then((r) => r.json() as Promise<Room[]>),
-    ])
-      .then(([disData, bedsData, roomsData]) => {
+    let mounted = true;
+    const fetchAll = async () => {
+      try {
+        const [disRes, bedsRes, roomsRes] = await Promise.all([
+          fetch("/api/discharges"),
+          fetch("/api/beds"),
+          fetch("/api/rooms"),
+        ]);
+        if (!mounted) return;
+        const disData = (await disRes.json()) as Discharge[];
+        const bedsData = (await bedsRes.json()) as Bed[];
+        const roomsData = (await roomsRes.json()) as Room[];
         setDischarges(disData ?? []);
         setBeds(bedsData ?? []);
         setRooms(roomsData ?? []);
-      })
-      .catch(() => {
+      } catch {
+        if (!mounted) return;
         setDischarges([]);
         setBeds([]);
         setRooms([]);
-      });
+      }
+    };
+
+    fetchAll();
+    const id = setInterval(fetchAll, 5000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
   }, []);
 
   const getRoomNumberForBed = (bedId: number | null | undefined) => {

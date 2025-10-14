@@ -8,23 +8,33 @@ export default function BedStatusBoard() {
   const [beds, setBeds] = useState<Bed[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
 
+  // Polling: recargar estado de camas y habitaciones cada 5s para reflejar cambios en tiempo real
   useEffect(() => {
-    Promise.all([
-      fetch("/api/beds").then((res) => res.json() as Promise<Bed[]>),
-      fetch("/api/rooms").then((res) => res.json() as Promise<Room[]>),
-    ])
-      .then(([bedsData, roomsData]) => {
-        // Ordenar por last_update descendente (más reciente primero)
+    let mounted = true;
+    const fetchAll = async () => {
+      try {
+        const [bedsRes, roomsRes] = await Promise.all([fetch("/api/beds"), fetch("/api/rooms")]);
+        if (!mounted) return;
+        const bedsData = (await bedsRes.json()) as Bed[];
+        const roomsData = (await roomsRes.json()) as Room[];
         const sortedBeds = Array.isArray(bedsData)
-          ? bedsData.slice().sort((a, b) => new Date(b.last_update).getTime() - new Date(a.last_update).getTime())
+          ? bedsData.slice().sort((a, b) => new Date(String(b.last_update)).getTime() - new Date(String(a.last_update)).getTime())
           : [];
         setBeds(sortedBeds);
-        setRooms(roomsData);
-      })
-      .catch(() => {
+        setRooms(roomsData ?? []);
+      } catch {
+        if (!mounted) return;
         setBeds([]);
         setRooms([]);
-      });
+      }
+    };
+
+    fetchAll();
+    const id = setInterval(fetchAll, 5000);
+    return () => {
+      mounted = false;
+      clearInterval(id);
+    };
   }, []);
 
   const getRoomNumber = (room_id: number) =>
