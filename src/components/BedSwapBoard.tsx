@@ -5,11 +5,11 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 
 import { Bed, Discharge, Patient, Room } from "@/types"; // <-- añadí Discharge
+import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import
 
 function formatDate(date: Date | string | null | undefined) {
-  if (!date) return "—";
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  // reutilizamos util consistente que devuelve "YYYY-MM-DD h:mm AM/PM"
+  return to12HourWithDate(date);
 }
 
 const STATUS: ("Limpieza" | "Disponible" | "Ocupada")[] = [
@@ -90,6 +90,9 @@ export default function BedSwapBoard() {
   const [hoverStatus, setHoverStatus] = useState<string | null>(null);
   const [placeholderHeight, setPlaceholderHeight] = useState<number | null>(null);
   const [bedPlaceholder, setBedPlaceholder] = useState<{ status: string; height: number } | null>(null);
+
+  // Nuevas columnas permitidas durante el "press/drag" para iluminar destinos válidos
+  const [allowedColumns, setAllowedColumns] = useState<string[]>([]);
 
   // Polling para actualizar en "tiempo real" (cada 8s)
   useEffect(() => {
@@ -305,6 +308,8 @@ export default function BedSwapBoard() {
           dragPreviewRef.current.remove();
           dragPreviewRef.current = null;
         }
+        // asegurarse de iluminar columnas válidas si existe draggingRef.current
+        // (siempre que se haya seteado allowedColumns en onDragStart)
         const rect = element.getBoundingClientRect();
         const clone = element.cloneNode(true) as HTMLElement;
         clone.classList.add("drag-preview");
@@ -354,6 +359,8 @@ export default function BedSwapBoard() {
             }
             currentDraggedElRef.current.classList.remove("drag-hidden");
             currentDraggedElRef.current = null;
+            // limpiar iluminación de columnas solo cuando se suelta (pointerup)
+            setAllowedColumns([]);
             setDragging({ type: null });
             setHoverStatus(null);
           }
@@ -389,6 +396,8 @@ export default function BedSwapBoard() {
           rect: element.getBoundingClientRect(),
         }),
         onDragStart: () => {
+          // columnas válidas cuando arrastramos una mini-tarjeta de paciente
+          setAllowedColumns(["sin cama", "de alta"]);
           setDragging({ type: "patient", id: patientId });
           // mark original as 'lifted' (attenuated)
           el.classList.add("drag-hidden");
@@ -397,6 +406,7 @@ export default function BedSwapBoard() {
           createPreview(el);
         },
         onDrop: () => {
+          setAllowedColumns([]);
           setDragging({ type: null });
           setHoverStatus(null);
           setPlaceholderHeight(null);
@@ -460,6 +470,8 @@ export default function BedSwapBoard() {
             }
             currentDraggedElRef.current.classList.remove("drag-hidden");
             currentDraggedElRef.current = null;
+            // limpiar iluminación de columnas solo cuando se suelta (pointerup)
+            setAllowedColumns([]);
             setDragging({ type: null });
             setHoverStatus(null);
           }
@@ -495,12 +507,15 @@ export default function BedSwapBoard() {
           rect: element.getBoundingClientRect(),
         }),
         onDragStart: () => {
+          // columnas válidas cuando arrastramos una carta grande de cama (no Ocupada)
+          setAllowedColumns(["Disponible", "Limpieza"]);
           setDragging({ type: "bed", id: bedId });
           el.classList.add("drag-hidden");
           currentDraggedElRef.current = el;
           createPreview(el);
         },
         onDrop: () => {
+          setAllowedColumns([]);
           setDragging({ type: null });
           setHoverStatus(null);
           setBedPlaceholder(null);
@@ -553,12 +568,14 @@ export default function BedSwapBoard() {
           setHoverStatus(null);
           setPlaceholderHeight(null);
           setBedPlaceholder(null);
+          // si el pointer sale por completo, también quitar iluminación de columnas posibles
         },
         onDrop: ({ source }) => {
           if (!source?.data) {
             setHoverStatus(null);
             setPlaceholderHeight(null);
             setBedPlaceholder(null);
+            setAllowedColumns([]);
             return;
           }
           if (isBedDragData(source.data)) {
@@ -571,6 +588,7 @@ export default function BedSwapBoard() {
               setDragging({ type: null });
               setPlaceholderHeight(null);
               setBedPlaceholder(null);
+              setAllowedColumns([]);
               return;
             }
           } else if (isPatientDragData(source.data)) {
@@ -585,6 +603,7 @@ export default function BedSwapBoard() {
           setDragging({ type: null });
           setPlaceholderHeight(null);
           setBedPlaceholder(null);
+          setAllowedColumns([]);
         },
       });
       disposers.push(() => disposer?.());
@@ -621,6 +640,7 @@ export default function BedSwapBoard() {
             return;
           }
           setHoverStatus(null);
+          // si salimos de la tarjeta objetivo y no hay drag activo, limpiar columnas permitidas
         },
         onDrop: ({ source }) => {
           // Only allow assigning patient when bed is Disponible and patient is unassigned
@@ -636,6 +656,7 @@ export default function BedSwapBoard() {
           }
           setHoverStatus(null);
           setDragging({ type: null });
+          setAllowedColumns([]);
         },
       });
       disposers.push(() => disposer?.());
@@ -661,6 +682,8 @@ export default function BedSwapBoard() {
         currentDraggedElRef.current.classList.remove("drag-hidden");
         currentDraggedElRef.current = null;
       }
+      // asegurar limpieza final de iluminación en el desmontaje
+      setAllowedColumns([]);
     };
   }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById]);
 
@@ -735,11 +758,14 @@ export default function BedSwapBoard() {
   // Render: remove native drag event attributes; add data-attrs for Pragmatic
   return (
     <div>
-      <h3 className="text-xl font-bold mb-4">Gestión de Pacientes y Camas</h3>
+      <h3 className="text-2xl text-center font-bold mb-4">Gestión de Pacientes y Camas</h3>
       <div className="grid grid-cols-1 gap-4 w-full">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 w-full">
           {/* Unassigned patients */}
-          <div className="col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="sin cama">
+          <div
+            className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("sin cama") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
+            data-drop-column="sin cama"
+          >
             <h4 className="font-semibold mb-2 text-center">
               Pacientes (sin cama)  {unassignedPatients.length}
             </h4>
@@ -758,7 +784,7 @@ export default function BedSwapBoard() {
                   className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu will-change-transform"
                 >
                   <div className="font-bold">{p.name}</div>
-                  <div className="text-xs">Ingreso estimado: {p.estimated_time ?? "—"}</div>
+                  <div className="text-xs">Hora De Ingreso: {p.estimated_time ?? "—"}</div>
                   <div className="text-xs">Estado: {p.discharge_status}</div>
                 </div>
               ))}
@@ -769,7 +795,7 @@ export default function BedSwapBoard() {
             {STATUS.map((status) => (
               <div
                 key={status}
-                className="bg-white/10 rounded-lg p-4 min-h-[220px]"
+                className={`bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes(status) ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
                 data-drop-column={status}
               >
                 <h4 className="font-semibold mb-2 text-center">{status}</h4>
@@ -830,7 +856,10 @@ export default function BedSwapBoard() {
             ))}
           </div>
           {/* Discharged / Egresos column */}
-          <div className="col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="de alta">
+          <div
+            className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("de alta") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
+            data-drop-column="de alta"
+          >
             <h4 className="font-semibold mb-2 text-center">Pacientes dados de alta</h4>
             <div className="flex-1">
               {/* Placeholder: use same color & padding as patient cards and match dragged rect height */}
@@ -844,7 +873,7 @@ export default function BedSwapBoard() {
                 <div key={p.id} className="mb-2 bg-white/20 rounded shadow p-2">
                   <div className="font-bold">{p.name}</div>
                   <div className="text-xs">
-                    Hora de salida: {p.discharge_time ? formatDate(p.discharge_time) : "—"}
+                    Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}
                   </div>
                   <div className="text-xs">Estado: {p.discharge_status}</div>
                 </div>

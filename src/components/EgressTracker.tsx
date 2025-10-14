@@ -2,12 +2,7 @@
 import { useEffect, useState } from "react";
 
 import { Discharge } from "@/types";
-
-function formatHour(date: Date | string | null | undefined) {
-  if (!date) return "";
-  const d = new Date(date);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+import { to12Hour } from "@/utils/time"; // <-- nuevo import
 
 export default function EgressTracker() {
   const [discharges, setDischarges] = useState<Discharge[]>([]);
@@ -43,7 +38,7 @@ export default function EgressTracker() {
               <td className="px-4 py-2">{idx + 1}</td>
               <td className="px-4 py-2">{discharge.patient}</td>
               <td className="px-4 py-2">{discharge.bed_id}</td>
-              <td className="px-4 py-2">{formatHour(discharge.expected_time)}</td>
+              <td className="px-4 py-2">{to12Hour(discharge.expected_time)}</td>
             </tr>
           ))}
         </tbody>

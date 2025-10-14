@@ -3,11 +3,7 @@
 import React, { useEffect, useState } from "react";
 
 import { Bed, Room } from "@/types";
-
-function formatDate(date: Date | string) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import
 
 export default function Dashboard() {
   const [beds, setBeds] = useState<Bed[]>([]);
@@ -51,7 +47,7 @@ export default function Dashboard() {
                 <td className="px-4 py-3 align-top">{bed.id}</td>
                 <td className="px-4 py-3 align-top">{getRoomNumber(bed.room_id)}</td>
                 <td className="px-4 py-3 align-top">{bed.status}</td>
-                <td className="px-4 py-3 align-top">{formatDate(bed.last_update)}</td>
+                <td className="px-4 py-3 align-top">{to12HourWithDate(bed.last_update)}</td>
               </tr>
             ))}
           </tbody>
