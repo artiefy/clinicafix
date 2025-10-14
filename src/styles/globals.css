@@ -1,29 +1,51 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }
 
 @custom-variant hover (&:hover);
 
 @media (hover: hover) {
-	.hover\:underline:hover {
-		text-decoration: underline;
-	}
+  .hover\:underline:hover {
+    text-decoration: underline;
+  }
 }
 
 @layer base {
-	*,
-	::after,
-	::before,
-	::backdrop,
-	::file-selector-button {
-		border-color: var(--color-gray-200, currentColor);
-	}
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentColor);
+  }
 
-	button:not(:disabled),
-	[role='button']:not(:disabled) {
-		cursor: pointer;
-	}
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* --- NEW: estilos para preview flotante y original atenuado --- */
+.drag-preview {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transform: translateZ(0) scale(1.02);
+  transition:
+    transform 120ms ease,
+    opacity 120ms ease;
+  opacity: 0.98;
+  border-radius: 6px;
+  background-clip: padding-box;
+}
+
+.drag-hidden {
+  opacity: 0.28 !important;
+  transform: translateY(-6px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  pointer-events: none;
 }

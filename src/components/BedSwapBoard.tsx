@@ -120,6 +120,12 @@ export default function BedSwapBoard() {
     fetchAllRef.current = fetchAll;
   }, [fetchAll]);
 
+  // --- NEW: refs para preview flotante y handler de pointermove ---
+  const dragPreviewRef = useRef<HTMLElement | null>(null);
+  const pointerMoveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const pointerUpHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const currentDraggedElRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
@@ -280,26 +286,115 @@ export default function BedSwapBoard() {
   // Pragmatic integration: create draggables and dropTargets based on data-attributes
   useEffect(() => {
     const disposers: (() => void)[] = [];
-    // Elimina la variable 'draggingBedStatus' para evitar el warning de ESLint
 
     // create draggables for patients
     document.querySelectorAll<HTMLElement>("[data-draggable-patient]").forEach((el) => {
       const idAttr = el.dataset.draggablePatient;
       const patientId = idAttr ? Number(idAttr) : NaN;
       if (!Number.isFinite(patientId)) return;
+
+      const createPreview = (element: HTMLElement) => {
+        // remove any previous preview
+        if (dragPreviewRef.current) {
+          dragPreviewRef.current.remove();
+          dragPreviewRef.current = null;
+        }
+        const rect = element.getBoundingClientRect();
+        const clone = element.cloneNode(true) as HTMLElement;
+        clone.classList.add("drag-preview");
+        // prevent nested data attributes interfering
+        clone.removeAttribute("data-draggable-patient");
+        clone.removeAttribute("data-draggable-bed");
+        clone.style.width = `${rect.width}px`;
+        clone.style.height = `${rect.height}px`;
+        clone.style.position = "fixed";
+        clone.style.left = `${rect.left}px`;
+        clone.style.top = `${rect.top}px`;
+        clone.style.zIndex = "9999";
+        clone.style.pointerEvents = "none";
+        document.body.appendChild(clone);
+        dragPreviewRef.current = clone;
+
+        // attach pointermove to follow pointer (preview slightly below pointer)
+        const handler = (ev: PointerEvent) => {
+          if (!dragPreviewRef.current) return;
+          const w = dragPreviewRef.current.offsetWidth;
+          const x = ev.clientX - w / 2;
+          const y = ev.clientY + 10; // below the click
+          dragPreviewRef.current.style.left = `${Math.max(4, x)}px`;
+          dragPreviewRef.current.style.top = `${Math.max(4, y)}px`;
+        };
+        pointerMoveHandlerRef.current = handler;
+        document.addEventListener("pointermove", handler);
+
+        // attach pointerup / pointercancel to ensure cleanup when drag is cancelled
+        const upHandler = () => {
+          // call cleanup on the currently dragged element (if any)
+          if (currentDraggedElRef.current) {
+            // reuse same cleanup used in onDrop
+            if (dragPreviewRef.current) {
+              dragPreviewRef.current.remove();
+              dragPreviewRef.current = null;
+            }
+            if (pointerMoveHandlerRef.current) {
+              document.removeEventListener("pointermove", pointerMoveHandlerRef.current);
+              pointerMoveHandlerRef.current = null;
+            }
+            // remove pointerup listeners
+            if (pointerUpHandlerRef.current) {
+              document.removeEventListener("pointerup", pointerUpHandlerRef.current);
+              document.removeEventListener("pointercancel", pointerUpHandlerRef.current);
+              pointerUpHandlerRef.current = null;
+            }
+            currentDraggedElRef.current.classList.remove("drag-hidden");
+            currentDraggedElRef.current = null;
+            setDragging({ type: null });
+            setHoverStatus(null);
+          }
+        };
+        pointerUpHandlerRef.current = upHandler;
+        document.addEventListener("pointerup", upHandler);
+        document.addEventListener("pointercancel", upHandler);
+      };
+
+      const removePreviewAndCleanup = (element?: HTMLElement) => {
+        if (dragPreviewRef.current) {
+          dragPreviewRef.current.remove();
+          dragPreviewRef.current = null;
+        }
+        if (pointerMoveHandlerRef.current) {
+          document.removeEventListener("pointermove", pointerMoveHandlerRef.current);
+          pointerMoveHandlerRef.current = null;
+        }
+        if (pointerUpHandlerRef.current) {
+          document.removeEventListener("pointerup", pointerUpHandlerRef.current);
+          document.removeEventListener("pointercancel", pointerUpHandlerRef.current);
+          pointerUpHandlerRef.current = null;
+        }
+        if (element) element.classList.remove("drag-hidden");
+        currentDraggedElRef.current = null;
+      };
+
       const disposer = draggable({
         element: el,
-        // include rect so drop targets can render a preview with the same height
         getInitialData: ({ element }) => ({
           type: "patient",
           id: patientId,
           rect: element.getBoundingClientRect(),
         }),
-        onDragStart: () => setDragging({ type: "patient", id: patientId }),
+        onDragStart: () => {
+          setDragging({ type: "patient", id: patientId });
+          // mark original as 'lifted' (attenuated)
+          el.classList.add("drag-hidden");
+          currentDraggedElRef.current = el;
+          // create floating preview (clone) that will follow the pointer
+          createPreview(el);
+        },
         onDrop: () => {
           setDragging({ type: null });
           setHoverStatus(null);
           setPlaceholderHeight(null);
+          removePreviewAndCleanup(el);
         },
       });
       disposers.push(() => disposer?.());
@@ -310,6 +405,82 @@ export default function BedSwapBoard() {
       const idAttr = el.dataset.draggableBed;
       const bedId = idAttr ? Number(idAttr) : NaN;
       if (!Number.isFinite(bedId)) return;
+
+      const createPreview = (element: HTMLElement) => {
+        if (dragPreviewRef.current) {
+          dragPreviewRef.current.remove();
+          dragPreviewRef.current = null;
+        }
+        const rect = element.getBoundingClientRect();
+        const clone = element.cloneNode(true) as HTMLElement;
+        clone.classList.add("drag-preview");
+        clone.removeAttribute("data-draggable-patient");
+        clone.removeAttribute("data-draggable-bed");
+        clone.style.width = `${rect.width}px`;
+        clone.style.height = `${rect.height}px`;
+        clone.style.position = "fixed";
+        clone.style.left = `${rect.left}px`;
+        clone.style.top = `${rect.top}px`;
+        clone.style.zIndex = "9999";
+        clone.style.pointerEvents = "none";
+        document.body.appendChild(clone);
+        dragPreviewRef.current = clone;
+
+        const handler = (ev: PointerEvent) => {
+          if (!dragPreviewRef.current) return;
+          const w = dragPreviewRef.current.offsetWidth;
+          const x = ev.clientX - w / 2;
+          const y = ev.clientY + 10;
+          dragPreviewRef.current.style.left = `${Math.max(4, x)}px`;
+          dragPreviewRef.current.style.top = `${Math.max(4, y)}px`;
+        };
+        pointerMoveHandlerRef.current = handler;
+        document.addEventListener("pointermove", handler);
+
+        const upHandler = () => {
+          if (currentDraggedElRef.current) {
+            if (dragPreviewRef.current) {
+              dragPreviewRef.current.remove();
+              dragPreviewRef.current = null;
+            }
+            if (pointerMoveHandlerRef.current) {
+              document.removeEventListener("pointermove", pointerMoveHandlerRef.current);
+              pointerMoveHandlerRef.current = null;
+            }
+            if (pointerUpHandlerRef.current) {
+              document.removeEventListener("pointerup", pointerUpHandlerRef.current);
+              document.removeEventListener("pointercancel", pointerUpHandlerRef.current);
+              pointerUpHandlerRef.current = null;
+            }
+            currentDraggedElRef.current.classList.remove("drag-hidden");
+            currentDraggedElRef.current = null;
+            setDragging({ type: null });
+            setHoverStatus(null);
+          }
+        };
+        pointerUpHandlerRef.current = upHandler;
+        document.addEventListener("pointerup", upHandler);
+        document.addEventListener("pointercancel", upHandler);
+      };
+
+      const removePreviewAndCleanup = (element?: HTMLElement) => {
+        if (dragPreviewRef.current) {
+          dragPreviewRef.current.remove();
+          dragPreviewRef.current = null;
+        }
+        if (pointerMoveHandlerRef.current) {
+          document.removeEventListener("pointermove", pointerMoveHandlerRef.current);
+          pointerMoveHandlerRef.current = null;
+        }
+        if (pointerUpHandlerRef.current) {
+          document.removeEventListener("pointerup", pointerUpHandlerRef.current);
+          document.removeEventListener("pointercancel", pointerUpHandlerRef.current);
+          pointerUpHandlerRef.current = null;
+        }
+        if (element) element.classList.remove("drag-hidden");
+        currentDraggedElRef.current = null;
+      };
+
       const disposer = draggable({
         element: el,
         getInitialData: ({ element }) => ({
@@ -319,13 +490,15 @@ export default function BedSwapBoard() {
         }),
         onDragStart: () => {
           setDragging({ type: "bed", id: bedId });
-          // (no guardar draggingBedStatus, no se usa)
+          el.classList.add("drag-hidden");
+          currentDraggedElRef.current = el;
+          createPreview(el);
         },
         onDrop: () => {
           setDragging({ type: null });
           setHoverStatus(null);
           setBedPlaceholder(null);
-          // (no limpiar draggingBedStatus, no se usa)
+          removePreviewAndCleanup(el);
         },
       });
       disposers.push(() => disposer?.());
@@ -440,6 +613,24 @@ export default function BedSwapBoard() {
 
     return () => {
       disposers.forEach((d) => d());
+      // cleanup any lingering preview / handlers
+      if (dragPreviewRef.current) {
+        dragPreviewRef.current.remove();
+        dragPreviewRef.current = null;
+      }
+      if (pointerMoveHandlerRef.current) {
+        document.removeEventListener("pointermove", pointerMoveHandlerRef.current);
+        pointerMoveHandlerRef.current = null;
+      }
+      if (pointerUpHandlerRef.current) {
+        document.removeEventListener("pointerup", pointerUpHandlerRef.current);
+        document.removeEventListener("pointercancel", pointerUpHandlerRef.current);
+        pointerUpHandlerRef.current = null;
+      }
+      if (currentDraggedElRef.current) {
+        currentDraggedElRef.current.classList.remove("drag-hidden");
+        currentDraggedElRef.current = null;
+      }
     };
   }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById]);
 

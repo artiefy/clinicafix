@@ -28,7 +28,7 @@ export default function EgressTracker() {
             <th>Paciente</th>
             <th>Cama</th>
             <th>Estado</th>
-            <th>Hora estimada</th>
+            <th>Hora De Salida</th>
           </tr>
         </thead>
         <tbody>
