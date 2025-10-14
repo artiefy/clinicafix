@@ -528,8 +528,8 @@ export default function BedSwapBoard() {
             }
             return;
           }
-          // Show placeholder for patients only when dragging to "de alta" column
-          if (isPatientDragData(source?.data) && status === "de alta") {
+          // Show placeholder for patients only when dragging to "de alta" OR "sin cama"
+          if (isPatientDragData(source?.data) && (status === "de alta" || status === "sin cama")) {
             setHoverStatus(status);
             const rectHeight = source.data.rect?.height;
             setPlaceholderHeight(typeof rectHeight === "number" ? rectHeight : 48);
@@ -744,7 +744,13 @@ export default function BedSwapBoard() {
               Pacientes (sin cama)  {unassignedPatients.length}
             </h4>
             <div className="flex-1">
-              {hoverStatus === "sin cama" ? <div className="h-6 border-2 border-dashed border-white/20 rounded mb-2 transition-all duration-200" /> : null}
+              {/* placeholder para mini-tarjeta: igual que en columna "de alta" */}
+              {hoverStatus === "sin cama" ? (
+                <div
+                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                />
+              ) : null}
               {unassignedPatients.map((p) => (
                 <div
                   key={p.id}
@@ -787,7 +793,8 @@ export default function BedSwapBoard() {
                     return (
                       <div
                         key={bed.id}
-                        data-draggable-bed={String(bed.id)}
+                        // Only make bed draggable when it's not Ocupada / no active patient
+                        data-draggable-bed={bed.status !== "Ocupada" && !hasActivePatient ? String(bed.id) : undefined}
                         data-drop-bed={String(bed.id)}
                         className={`mb-2 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu will-change-transform ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.status === "Disponible"
                           ? "bg-green-600/10 border-l-4 border-green-600"
@@ -801,7 +808,7 @@ export default function BedSwapBoard() {
                         </div>
                         <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
 
-                        {hasActivePatient ? <div className="mt-2 text-xs text-yellow-300">Bloqueada (paciente activo)</div> : null}
+                        {/* No mostramos texto 'Bloqueada'. La cama ocupada NO es draggable; la mini-tarjeta de paciente dentro sí lo es. */}
 
                         {assigned ? (
                           <div

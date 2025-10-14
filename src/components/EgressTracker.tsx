@@ -22,35 +22,28 @@ export default function EgressTracker() {
   return (
     <section className="bg-white/10 rounded-xl p-6 text-white shadow">
       <h3 className="text-xl font-bold mb-4">Salidas De Pacientes</h3>
-      <table className="w-full text-left">
+      <table className="w-full table-fixed text-left">
+        <colgroup>
+          <col className="w-1/4" />
+          <col className="w-1/4" />
+          <col className="w-1/4" />
+          <col className="w-1/4" />
+        </colgroup>
         <thead>
           <tr>
-            <th>#</th>
-            <th>Paciente</th>
-            <th>Cama</th>
-            <th>Estado</th>
-            <th>Hora De Salida</th>
+            <th className="px-4 py-2">#</th>
+            <th className="px-4 py-2">Paciente</th>
+            <th className="px-4 py-2">Cama</th>
+            <th className="px-4 py-2">Hora De Salida</th>
           </tr>
         </thead>
         <tbody>
           {discharges.map((discharge, idx) => (
             <tr key={discharge.id}>
-              <td className="pr-4">{idx + 1}</td>
-              <td>{discharge.patient}</td>
-              <td>{discharge.bed_id}</td>
-              <td>
-                <span
-                  className={`px-2 py-1 rounded ${discharge.status === "Completado"
-                    ? "bg-green-600"
-                    : discharge.status === "En Proceso"
-                      ? "bg-blue-600"
-                      : "bg-yellow-500"
-                    }`}
-                >
-                  {discharge.status}
-                </span>
-              </td>
-              <td>{formatHour(discharge.expected_time)}</td>
+              <td className="px-4 py-2">{idx + 1}</td>
+              <td className="px-4 py-2">{discharge.patient}</td>
+              <td className="px-4 py-2">{discharge.bed_id}</td>
+              <td className="px-4 py-2">{formatHour(discharge.expected_time)}</td>
             </tr>
           ))}
         </tbody>
