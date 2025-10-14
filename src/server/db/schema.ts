@@ -31,7 +31,8 @@ export const patients = createTable(
   (d) => ({
     id: d.serial().primaryKey(),
     name: d.varchar({ length: 128 }).notNull(),
-    bed_id: d.integer().notNull().references(() => beds.id),
+    // allow NULL to represent "sin cama"
+    bed_id: d.integer().references(() => beds.id),
     discharge_status: d.varchar({ length: 32 }).notNull(), // pendiente, en_proceso, completado
     estimated_time: d.time(), // hora estimada de egreso
   }),

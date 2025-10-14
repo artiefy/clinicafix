@@ -10,11 +10,14 @@ export interface Bed {
   last_update: Date;
 }
 
+// Define explicit patient status literals
+export type PatientStatus = "sin cama" | "con cama" | "de alta" | "Pendiente" | "En Proceso";
+
 export interface Patient {
   id: number;
   name: string;
-  bed_id: number;
-  discharge_status: string;
+  bed_id: number | null; // null = sin cama
+  discharge_status: PatientStatus;
   estimated_time: string | null;
 }
 

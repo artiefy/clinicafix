@@ -6,7 +6,7 @@ import { Discharge } from "@/types";
 
 export async function GET() {
   try {
-    const dischargesData = await db.select().from(discharges);
+    const dischargesData = await db.select().from(discharges).orderBy(discharges.created_at);
     return NextResponse.json(dischargesData as Discharge[]);
   } catch (_err) {
     return NextResponse.json({ error: "Error al obtener egresos" }, { status: 500 });

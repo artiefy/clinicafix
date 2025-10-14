@@ -45,16 +45,17 @@ export default function CleaningAlerts() {
             <strong>
               Cama {alert.bed_id} - Habitación {getRoomNumber(alert.bed_id)}:
             </strong>{" "}
-            <span
-              className={`px-2 py-1 rounded ${alert.type === "Pendiente"
-                ? "bg-yellow-500"
-                : alert.type === "En Proceso"
-                  ? "bg-blue-600"
-                  : "bg-green-600"
-                }`}
-            >
-              {alert.type}
-            </span>{" "}
+            {(() => {
+              const bed = beds.find((b) => b.id === alert.bed_id);
+              const status = bed?.status ?? "Disponible";
+              const cls =
+                status === "Disponible"
+                  ? "px-2 py-1 rounded text-xs bg-green-600"
+                  : status === "Limpieza"
+                    ? "px-2 py-1 rounded text-xs bg-yellow-500 text-white"
+                    : "px-2 py-1 rounded text-xs bg-red-600";
+              return <span className={cls}>{status}</span>;
+            })()}{" "}
             <span className="text-xs text-gray-300">
               ({formatDate(alert.timestamp)})
             </span>
