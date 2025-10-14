@@ -52,19 +52,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
             patient: existingPatient.name,
             bed_id: prevBedId,
             status: "Alta",
-            expected_time: new Date(),
+            expected_time: new Date(), // <-- la fecha/hora de salida
           });
         } catch (insertErr) {
           console.error("Error inserting discharge record:", insertErr);
-        }
-      }
-
-      if (prevBedId) {
-        const unassigned = await db.select().from(patients).where(eq(patients.discharge_status, "sin cama")).limit(1);
-        if (unassigned.length > 0) {
-          const first = unassigned[0];
-          await db.update(patients).set({ bed_id: prevBedId, discharge_status: "con cama" }).where(eq(patients.id, first.id));
-          await occupyBed(prevBedId);
         }
       }
 
