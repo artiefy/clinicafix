@@ -79,8 +79,14 @@ export default function BedSwapBoard() {
   const [recentDischarge, setRecentDischarge] = useState<RecentDischargeType | null>(null);
 
   // dragging state: { type: 'bed' | 'patient' | null, id?: number }
-  // prefix with underscore to avoid "assigned but never used" eslint
   const [_dragging, setDragging] = useState<{ type: "bed" | "patient" | null; id?: number }>({ type: null });
+
+  // Ref to always have the latest dragging info inside event callbacks
+  const draggingRef = useRef<{ type: "bed" | "patient" | null; id?: number }>(_dragging);
+  useEffect(() => {
+    draggingRef.current = _dragging;
+  }, [_dragging]);
+
   const [hoverStatus, setHoverStatus] = useState<string | null>(null);
   const [placeholderHeight, setPlaceholderHeight] = useState<number | null>(null);
   const [bedPlaceholder, setBedPlaceholder] = useState<{ status: string; height: number } | null>(null);
@@ -529,12 +535,25 @@ export default function BedSwapBoard() {
             setPlaceholderHeight(typeof rectHeight === "number" ? rectHeight : 48);
           }
         },
-        // Mantener la sombra mientras se arrastra (no limpiar en onDragLeave)
-        // onDragLeave: () => {
-        //   setHoverStatus(null);
-        //   setPlaceholderHeight(null);
-        //   setBedPlaceholder(null);
-        // },
+        // Mantener la sombra mientras se arrastra: solo limpiar si NO es el mismo source que sigue arrastrándose
+        onDragLeave: ({ source }) => {
+          const active = draggingRef.current;
+          let srcId: number | undefined;
+          if (source?.data && (isPatientDragData(source.data) || isBedDragData(source.data))) {
+            // ahora es seguro leer .id porque los type-guards lo garantizan
+            srcId = source.data.id;
+          } else {
+            srcId = undefined;
+          }
+          if (active && srcId !== undefined && active.id === srcId) {
+            // Mismo elemento sigue arrastrándose: no limpiar el placeholder
+            return;
+          }
+          // distinto source o sin source: limpiar estados
+          setHoverStatus(null);
+          setPlaceholderHeight(null);
+          setBedPlaceholder(null);
+        },
         onDrop: ({ source }) => {
           if (!source?.data) {
             setHoverStatus(null);
@@ -589,7 +608,18 @@ export default function BedSwapBoard() {
             }
           }
         },
-        onDragLeave: () => {
+        onDragLeave: ({ source }) => {
+          const active = draggingRef.current;
+          let srcId: number | undefined;
+          if (source?.data && (isPatientDragData(source.data) || isBedDragData(source.data))) {
+            srcId = source.data.id;
+          } else {
+            srcId = undefined;
+          }
+          if (active && srcId !== undefined && active.id === srcId) {
+            // keep highlight until drop for same dragged element
+            return;
+          }
           setHoverStatus(null);
         },
         onDrop: ({ source }) => {

@@ -18,7 +18,11 @@ export default function BedStatusBoard() {
       fetch("/api/rooms").then((res) => res.json() as Promise<Room[]>),
     ])
       .then(([bedsData, roomsData]) => {
-        setBeds(bedsData);
+        // Ordenar por last_update descendente (más reciente primero)
+        const sortedBeds = Array.isArray(bedsData)
+          ? bedsData.slice().sort((a, b) => new Date(b.last_update).getTime() - new Date(a.last_update).getTime())
+          : [];
+        setBeds(sortedBeds);
         setRooms(roomsData);
       })
       .catch(() => {

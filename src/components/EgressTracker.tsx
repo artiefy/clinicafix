@@ -21,10 +21,11 @@ export default function EgressTracker() {
 
   return (
     <section className="bg-white/10 rounded-xl p-6 text-white shadow">
-      <h3 className="text-xl font-bold mb-4">Tracker de Egresos</h3>
+      <h3 className="text-xl font-bold mb-4">Salidas De Pacientes</h3>
       <table className="w-full text-left">
         <thead>
           <tr>
+            <th>#</th>
             <th>Paciente</th>
             <th>Cama</th>
             <th>Estado</th>
@@ -32,8 +33,9 @@ export default function EgressTracker() {
           </tr>
         </thead>
         <tbody>
-          {discharges.map((discharge) => (
+          {discharges.map((discharge, idx) => (
             <tr key={discharge.id}>
+              <td className="pr-4">{idx + 1}</td>
               <td>{discharge.patient}</td>
               <td>{discharge.bed_id}</td>
               <td>
