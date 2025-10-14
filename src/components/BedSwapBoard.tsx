@@ -399,7 +399,7 @@ export default function BedSwapBoard() {
           rect: element.getBoundingClientRect(),
         }),
         onDragStart: () => {
-          // columnas válidas y cama resaltada según el estado del paciente
+          // columnas válidas y cama resaltada segun el estado del paciente
           const p = patients.find((x) => x.id === patientId);
           if (p?.discharge_status === "sin cama") {
             // cuando el paciente está "sin cama" NO permitir "de alta"
