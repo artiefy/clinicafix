@@ -5,7 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 
 import { Bed, Discharge, Patient, Room } from "@/types"; // <-- añadí Discharge
-import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import
+import { to12Hour, to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
 
 function formatDate(date: Date | string | null | undefined) {
   // reutilizamos util consistente que devuelve "YYYY-MM-DD h:mm AM/PM"
@@ -93,6 +93,8 @@ export default function BedSwapBoard() {
 
   // Nuevas columnas permitidas durante el "press/drag" para iluminar destinos válidos
   const [allowedColumns, setAllowedColumns] = useState<string[]>([]);
+  // ID de la primera cama Disponible a resaltar mientras se arrastra un paciente "sin cama"
+  const [highlightBedId, setHighlightBedId] = useState<number | null>(null);
 
   // Polling para actualizar en "tiempo real" (cada 8s)
   useEffect(() => {
@@ -361,6 +363,7 @@ export default function BedSwapBoard() {
             currentDraggedElRef.current = null;
             // limpiar iluminación de columnas solo cuando se suelta (pointerup)
             setAllowedColumns([]);
+            setHighlightBedId(null);
             setDragging({ type: null });
             setHoverStatus(null);
           }
@@ -396,8 +399,26 @@ export default function BedSwapBoard() {
           rect: element.getBoundingClientRect(),
         }),
         onDragStart: () => {
-          // columnas válidas cuando arrastramos una mini-tarjeta de paciente
-          setAllowedColumns(["sin cama", "de alta"]);
+          // columnas válidas y cama resaltada según el estado del paciente
+          const p = patients.find((x) => x.id === patientId);
+          if (p?.discharge_status === "sin cama") {
+            // cuando el paciente está "sin cama" NO permitir "de alta"
+            setAllowedColumns(["sin cama"]);
+            // Resaltar la cama "Disponible" con last_update más reciente
+            const mostRecentAvailable = beds
+              .filter((b) => b.status === "Disponible")
+              .slice()
+              .sort((a, b) => {
+                const ta = a.last_update ? new Date(a.last_update).getTime() : 0;
+                const tb = b.last_update ? new Date(b.last_update).getTime() : 0;
+                return tb - ta;
+              })[0];
+            setHighlightBedId(mostRecentAvailable ? mostRecentAvailable.id : null);
+          } else {
+            // paciente ya en cama o dado de alta: permitir ambos destinos
+            setAllowedColumns(["sin cama", "de alta"]);
+            setHighlightBedId(null);
+          }
           setDragging({ type: "patient", id: patientId });
           // mark original as 'lifted' (attenuated)
           el.classList.add("drag-hidden");
@@ -407,6 +428,7 @@ export default function BedSwapBoard() {
         },
         onDrop: () => {
           setAllowedColumns([]);
+          setHighlightBedId(null);
           setDragging({ type: null });
           setHoverStatus(null);
           setPlaceholderHeight(null);
@@ -472,6 +494,7 @@ export default function BedSwapBoard() {
             currentDraggedElRef.current = null;
             // limpiar iluminación de columnas solo cuando se suelta (pointerup)
             setAllowedColumns([]);
+            setHighlightBedId(null);
             setDragging({ type: null });
             setHoverStatus(null);
           }
@@ -516,6 +539,7 @@ export default function BedSwapBoard() {
         },
         onDrop: () => {
           setAllowedColumns([]);
+          setHighlightBedId(null);
           setDragging({ type: null });
           setHoverStatus(null);
           setBedPlaceholder(null);
@@ -543,11 +567,21 @@ export default function BedSwapBoard() {
             }
             return;
           }
-          // Show placeholder for patients only when dragging to "de alta" OR "sin cama"
-          if (isPatientDragData(source?.data) && (status === "de alta" || status === "sin cama")) {
-            setHoverStatus(status);
-            const rectHeight = source.data.rect?.height;
-            setPlaceholderHeight(typeof rectHeight === "number" ? rectHeight : 48);
+          // Show placeholder for patients only when dragging to allowed columns.
+          if (isPatientDragData(source?.data)) {
+            // find the patient details to decide allowed drops
+            const patientId = source.data.id;
+            const draggedPatient = patients.find((p) => p.id === patientId);
+            // If patient is "sin cama", DO NOT allow dropping into "de alta"
+            if (draggedPatient?.discharge_status === "sin cama" && status === "de alta") {
+              // intentionally do not set hover/placeholder for "de alta"
+              return;
+            }
+            if (status === "de alta" || status === "sin cama") {
+              setHoverStatus(status);
+              const rectHeight = source.data.rect?.height;
+              setPlaceholderHeight(typeof rectHeight === "number" ? rectHeight : 48);
+            }
           }
         },
         // Mantener la sombra mientras se arrastra: solo limpiar si NO es el mismo source que sigue arrastrándose
@@ -576,6 +610,7 @@ export default function BedSwapBoard() {
             setPlaceholderHeight(null);
             setBedPlaceholder(null);
             setAllowedColumns([]);
+            setHighlightBedId(null);
             return;
           }
           if (isBedDragData(source.data)) {
@@ -589,14 +624,21 @@ export default function BedSwapBoard() {
               setPlaceholderHeight(null);
               setBedPlaceholder(null);
               setAllowedColumns([]);
+              setHighlightBedId(null);
               return;
             }
           } else if (isPatientDragData(source.data)) {
             const patientId = source.data.id;
-            if (status === "sin cama") {
-              void updatePatientStatusById(patientId, "sin cama");
-            } else if (status === "de alta") {
-              void updatePatientStatusById(patientId, "de alta");
+            const draggedPatient = patients.find((p) => p.id === patientId);
+            // prevent inserting "sin cama" patients into "de alta"
+            if (draggedPatient?.discharge_status === "sin cama" && status === "de alta") {
+              // ignore drop
+            } else {
+              if (status === "sin cama") {
+                void updatePatientStatusById(patientId, "sin cama");
+              } else if (status === "de alta") {
+                void updatePatientStatusById(patientId, "de alta");
+              }
             }
           }
           setHoverStatus(null);
@@ -604,6 +646,7 @@ export default function BedSwapBoard() {
           setPlaceholderHeight(null);
           setBedPlaceholder(null);
           setAllowedColumns([]);
+          setHighlightBedId(null);
         },
       });
       disposers.push(() => disposer?.());
@@ -657,6 +700,7 @@ export default function BedSwapBoard() {
           setHoverStatus(null);
           setDragging({ type: null });
           setAllowedColumns([]);
+          setHighlightBedId(null);
         },
       });
       disposers.push(() => disposer?.());
@@ -684,6 +728,7 @@ export default function BedSwapBoard() {
       }
       // asegurar limpieza final de iluminación en el desmontaje
       setAllowedColumns([]);
+      setHighlightBedId(null);
     };
   }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById]);
 
@@ -784,7 +829,7 @@ export default function BedSwapBoard() {
                   className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu will-change-transform"
                 >
                   <div className="font-bold">{p.name}</div>
-                  <div className="text-xs">Hora De Ingreso: {p.estimated_time ?? "—"}</div>
+                  <div className="text-xs">Hora De Ingreso: {p.estimated_time ? to12Hour(p.estimated_time) : "—"}</div>
                   <div className="text-xs">Estado: {p.discharge_status}</div>
                 </div>
               ))}
@@ -822,7 +867,7 @@ export default function BedSwapBoard() {
                         // Only make bed draggable when it's not Ocupada / no active patient
                         data-draggable-bed={bed.status !== "Ocupada" && !hasActivePatient ? String(bed.id) : undefined}
                         data-drop-bed={String(bed.id)}
-                        className={`mb-2 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu will-change-transform ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.status === "Disponible"
+                        className={`mb-2 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu will-change-transform ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.id === highlightBedId ? "ring-2 ring-sky-400" : ""} ${bed.status === "Disponible"
                           ? "bg-green-600/10 border-l-4 border-green-600"
                           : bed.status === "Limpieza"
                             ? "bg-yellow-500/10 border-l-4 border-yellow-500 text-white"

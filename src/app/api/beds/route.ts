@@ -32,17 +32,11 @@ export async function PUT(request: Request) {
     }
     const status = maybeStatus;
 
-    // last_update SIEMPRE se actualiza para Limpieza y Disponible
-    if (status === "Disponible" || status === "Limpieza") {
-      await db
-        .update(beds)
-        .set({ status, last_update: new Date() })
-        .where(sql`${beds.id} = ${id}`);
+    // Actualizamos last_update también al marcar como Disponible, Limpieza o Ocupada
+    if (status === "Disponible" || status === "Limpieza" || status === "Ocupada") {
+      await db.update(beds).set({ status, last_update: new Date() }).where(sql`${beds.id} = ${id}`);
     } else {
-      await db
-        .update(beds)
-        .set({ status })
-        .where(sql`${beds.id} = ${id}`);
+      await db.update(beds).set({ status }).where(sql`${beds.id} = ${id}`);
     }
 
     const updated = await db.select().from(beds).where(sql`${beds.id} = ${id}`);

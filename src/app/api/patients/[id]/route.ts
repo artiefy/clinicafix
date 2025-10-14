@@ -34,11 +34,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const freeBed = async (bedId: number | null) => {
       if (!bedId) return;
-      await db.update(beds).set({ status: "Disponible" }).where(eq(beds.id, bedId));
+      // marcar disponible y actualizar last_update
+      await db.update(beds).set({ status: "Disponible", last_update: new Date() }).where(eq(beds.id, bedId));
     };
 
     const occupyBed = async (bedId: number) => {
-      await db.update(beds).set({ status: "Ocupada" }).where(eq(beds.id, bedId));
+      await db.update(beds).set({ status: "Ocupada", last_update: new Date() }).where(eq(beds.id, bedId));
     };
 
     if (status === "de alta") {
