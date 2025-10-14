@@ -1,52 +1,24 @@
 "use client";
-import { useEffect, useState } from "react";
+import useSWR from "swr";
 
 import { Bed, Discharge, Room } from "@/types";
 import { to12Hour } from "@/utils/time";
 
 export default function EgressTracker() {
-  const [discharges, setDischarges] = useState<Discharge[]>([]);
-  const [beds, setBeds] = useState<Bed[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const { data: discharges } = useSWR<Discharge[]>("/api/discharges");
+  const { data: beds } = useSWR<Bed[]>("/api/beds");
+  const { data: rooms } = useSWR<Room[]>("/api/rooms");
 
-  // Polling: re-fetch every 5s so table updates in "real time"
-  useEffect(() => {
-    let mounted = true;
-    const fetchAll = async () => {
-      try {
-        const [disRes, bedsRes, roomsRes] = await Promise.all([
-          fetch("/api/discharges"),
-          fetch("/api/beds"),
-          fetch("/api/rooms"),
-        ]);
-        if (!mounted) return;
-        const disData = (await disRes.json()) as Discharge[];
-        const bedsData = (await bedsRes.json()) as Bed[];
-        const roomsData = (await roomsRes.json()) as Room[];
-        setDischarges(disData ?? []);
-        setBeds(bedsData ?? []);
-        setRooms(roomsData ?? []);
-      } catch {
-        if (!mounted) return;
-        setDischarges([]);
-        setBeds([]);
-        setRooms([]);
-      }
-    };
-
-    fetchAll();
-    const id = setInterval(fetchAll, 5000);
-    return () => {
-      mounted = false;
-      clearInterval(id);
-    };
-  }, []);
+  // SWR devuelve undefined mientras carga; usar fallback vacío para render
+  const disList = discharges ?? [];
+  const bedList = beds ?? [];
+  const roomList = rooms ?? [];
 
   const getRoomNumberForBed = (bedId: number | null | undefined) => {
     if (!bedId) return "—";
-    const bed = beds.find((b) => b.id === bedId);
+    const bed = bedList.find((b) => b.id === bedId);
     if (!bed) return "—";
-    return rooms.find((r) => r.id === bed.room_id)?.number ?? bed.room_id ?? "—";
+    return roomList.find((r) => r.id === bed.room_id)?.number ?? bed.room_id ?? "—";
   };
 
   return (
@@ -70,7 +42,7 @@ export default function EgressTracker() {
           </tr>
         </thead>
         <tbody>
-          {discharges.map((discharge, idx) => (
+          {disList.map((discharge, idx) => (
             <tr key={discharge.id}>
               <td className="px-4 py-2">{idx + 1}</td>
               <td className="px-4 py-2">{discharge.patient}</td>

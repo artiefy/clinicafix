@@ -1,32 +1,20 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
+
+import useSWR from "swr";
 
 import { Bed, Room } from "@/types";
 import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import
 
 export default function Dashboard() {
-  const [beds, setBeds] = useState<Bed[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/dashboard").then((res) => res.json()),
-      fetch("/api/rooms").then((res) => res.json()),
-    ])
-      .then(([bedsData, roomsData]) => {
-        setBeds(Array.isArray(bedsData) ? bedsData : []);
-        setRooms(Array.isArray(roomsData) ? roomsData : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div>Cargando...</div>;
+  const { data: beds } = useSWR<Bed[]>("/api/dashboard");
+  const { data: rooms } = useSWR<Room[]>("/api/rooms");
+  const bedsList = beds ?? [];
+  const roomsList = rooms ?? [];
 
   const getRoomNumber = (room_id: number) =>
-    rooms.find((r) => r.id === room_id)?.number ?? room_id;
+    roomsList.find((r) => r.id === room_id)?.number ?? room_id;
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4">
@@ -42,7 +30,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {beds.map((bed) => (
+            {bedsList.map((bed) => (
               <tr key={bed.id} className="last:pb-4">
                 <td className="px-4 py-3 align-top">{bed.id}</td>
                 <td className="px-4 py-3 align-top">{getRoomNumber(bed.room_id)}</td>

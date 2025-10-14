@@ -1,5 +1,7 @@
 import { Geist } from "next/font/google";
 
+import SWRProviderClient from "@/components/SWRProviderClient";
+
 import type { Metadata } from "next";
 
 import "@/styles/globals.css";
@@ -27,7 +29,10 @@ export default function RootLayout({
           <h1 className="text-2xl font-bold">SYO - Gestión Inteligente de Egresos</h1>
           <span className="text-sm">Clínica DIME</span>
         </header>
-        {children}
+
+        <SWRProviderClient>
+          {children}
+        </SWRProviderClient>
       </body>
     </html>
   );

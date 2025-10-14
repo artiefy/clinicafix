@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import useSWR, { useSWRConfig } from "swr";
 
 import { Bed, Discharge, Patient, Room } from "@/types"; // <-- añadí Discharge
 import { to12Hour, to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
@@ -69,10 +70,17 @@ function isBedDragData(x: unknown): x is BedDragData {
 }
 
 export default function BedSwapBoard() {
-  const [beds, setBeds] = useState<Bed[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [discharges, setDischarges] = useState<Discharge[]>([]); // <-- nuevo estado
+  const { mutate } = useSWRConfig();
+  const { data: bedsData } = useSWR<Bed[]>("/api/beds");
+  const { data: roomsData } = useSWR<Room[]>("/api/rooms");
+  const { data: patientsData } = useSWR<Patient[]>("/api/patients");
+  const { data: dischargesData } = useSWR<Discharge[]>("/api/discharges");
+
+  const [beds, setBeds] = useState<Bed[]>(bedsData ?? []);
+  const [rooms, setRooms] = useState<Room[]>(roomsData ?? []);
+  const [patients, setPatients] = useState<Patient[]>(patientsData ?? []);
+  const [discharges, setDischarges] = useState<Discharge[]>(dischargesData ?? []);
+
   // Cambia el tipo de recentDischarge para que incluya todas las propiedades de Patient y discharge_time
   type RecentDischargeType = Patient & { discharge_time: string };
 
@@ -96,50 +104,28 @@ export default function BedSwapBoard() {
   // ID de la primera cama Disponible a resaltar mientras se arrastra un paciente "sin cama"
   const [highlightBedId, setHighlightBedId] = useState<number | null>(null);
 
-  // Polling para actualizar en "tiempo real" (cada 8s)
-  useEffect(() => {
-    const id = setInterval(() => {
-      fetchAllRef.current?.();
-    }, 8000);
-    return () => clearInterval(id);
-  }, []);
+  // NOTE: polling removed. SWR provides the data (bedsData/roomsData/etc.)
+  // and mutate(...) is used to revalidate after mutations to avoid repeated GETs.
 
-  // fetchAll ahora incluye discharges
-  const fetchAll = useCallback(async () => {
-    try {
-      const [bedsRes, roomsRes, patientsRes, dischargesRes] = await Promise.all([
-        fetch("/api/beds"),
-        fetch("/api/rooms"),
-        fetch("/api/patients"),
-        fetch("/api/discharges"),
-      ]);
-      setBeds((await bedsRes.json()) as Bed[]);
-      setRooms((await roomsRes.json()) as Room[]);
-      setPatients((await patientsRes.json()) as Patient[]);
-      setDischarges((await dischargesRes.json()) as Discharge[]);
-    } catch {
-      setBeds([]);
-      setRooms([]);
-      setPatients([]);
-      setDischarges([]);
-    }
-  }, []);
-
-  // keep a ref to the latest fetchAll so callbacks can call it without adding it to deps
-  const fetchAllRef = useRef(fetchAll);
-  useEffect(() => {
-    fetchAllRef.current = fetchAll;
-  }, [fetchAll]);
-
-  // --- NEW: refs para preview flotante y handler de pointermove ---
+  // --- NEW: refs para preview flotante y handlers de pointer ---
   const dragPreviewRef = useRef<HTMLElement | null>(null);
   const pointerMoveHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
   const pointerUpHandlerRef = useRef<((e: PointerEvent) => void) | null>(null);
   const currentDraggedElRef = useRef<HTMLElement | null>(null);
 
+  // sync local state with SWR responses
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    if (bedsData) setBeds(bedsData);
+  }, [bedsData]);
+  useEffect(() => {
+    if (roomsData) setRooms(roomsData);
+  }, [roomsData]);
+  useEffect(() => {
+    if (patientsData) setPatients(patientsData);
+  }, [patientsData]);
+  useEffect(() => {
+    if (dischargesData) setDischarges(dischargesData);
+  }, [dischargesData]);
 
   const getRoomNumber = (room_id: number) =>
     rooms.find((r) => r.id === room_id)?.number ?? room_id;
@@ -170,15 +156,18 @@ export default function BedSwapBoard() {
       const now = new Date();
       setPatients((prev) => movePatientToFront(prev, patientId, { bed_id: bedId, discharge_status: "con cama" }));
       setBeds((prev) => sortBeds(prev.map((b) => (b.id === bedId ? { ...b, status: "Ocupada", last_update: now } : b))));
-      // refrescar en background para sincronizar estado real
-      fetchAllRef.current?.();
+      // revalidate SWR cache after mutation (invalidate affected keys)
+      void mutate("/api/patients");
+      void mutate("/api/beds");
+      void mutate("/api/discharges");
+      void mutate("/api/rooms");
     } catch (err) {
       console.error("Error assigning patient:", err);
     } finally {
       setHoverStatus(null);
       setDragging({ type: null });
     }
-  }, [patients]);
+  }, [patients, mutate]);
 
   const changeBedStatusById = useCallback(async (bedId: number, status: "Disponible" | "Limpieza" | "Ocupada") => {
     // Prevent manual moving into Ocupada; occupancy must be done by assigning a patient
@@ -219,14 +208,17 @@ export default function BedSwapBoard() {
           ),
         ),
       );
-      fetchAllRef.current?.();
+      // revalidate beds & related caches
+      void mutate("/api/beds");
+      void mutate("/api/rooms");
+      void mutate("/api/patients");
     } catch (err) {
       console.error("Error updating bed status:", err);
     } finally {
       setHoverStatus(null);
       setDragging({ type: null });
     }
-  }, [patients]);
+  }, [patients, mutate]);
 
   const updatePatientStatusById = useCallback(
     async (patientId: number, targetStatus: "sin cama" | "de alta") => {
@@ -281,8 +273,11 @@ export default function BedSwapBoard() {
             discharge_status: "de alta",
             bed_id: null,
           });
-          // Sincroniza después para mantener consistencia
-          await fetchAllRef.current?.();
+          // revalidate affected resources after discharge
+          void mutate("/api/patients");
+          void mutate("/api/beds");
+          void mutate("/api/discharges");
+          void mutate("/api/rooms");
         }
       } catch (err) {
         console.error("Error updating patient status:", err);
@@ -291,7 +286,7 @@ export default function BedSwapBoard() {
         setDragging({ type: null });
       }
     },
-    [patients],
+    [patients, mutate],
   );
 
   // Pragmatic integration: create draggables and dropTargets based on data-attributes
