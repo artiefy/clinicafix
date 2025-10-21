@@ -11,7 +11,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     const body = await request.json();
     const bodySchema = z.object({
       bed_id: z.number().nullable().optional(),
-      status: z.union([z.literal("sin cama"), z.literal("con cama"), z.literal("de alta")]).optional(),
+      status: z.union([
+        z.literal("sin cama"),
+        z.literal("con cama"),
+        z.literal("de alta"),
+        z.literal("diagnosticos_procedimientos"),
+        z.literal("pre-egreso"),
+      ]).optional(),
     });
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) {
@@ -77,6 +83,22 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       await db.update(patients).set({ discharge_status: "con cama", bed_id: newBedId }).where(eq(patients.id, patientId));
       await occupyBed(newBedId);
       return NextResponse.json({ message: "Paciente asignado a cama" });
+    }
+
+    // NEW: handle diagnosticos_procedimientos and pre-egreso statuses
+    if (status === "diagnosticos_procedimientos") {
+      // marcar paciente en diagnóstico/procedimiento pero mantener la cama asignada
+      await db.update(patients)
+        .set({ discharge_status: "diagnosticos_procedimientos" })
+        .where(eq(patients.id, patientId));
+      // la cama sigue ocupada
+      return NextResponse.json({ message: "Paciente marcado en diagnóstico/procedimiento (cama sigue ocupada)" });
+    }
+
+    if (status === "pre-egreso") {
+      // mark as pre-egreso (keep bed assigned)
+      await db.update(patients).set({ discharge_status: "pre-egreso" }).where(eq(patients.id, patientId));
+      return NextResponse.json({ message: "Paciente marcado como pre-egreso" });
     }
 
     // If bed_id provided explicitly (assignment/unassignment)

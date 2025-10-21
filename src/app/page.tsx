@@ -7,7 +7,7 @@ import PredictivePanel from "@/components/PredictivePanel";
 export default function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-start bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white py-8">
-      <div className="w-full max-w-6xl mx-auto p-4 flex flex-col gap-8">
+      <div className="w-full max-w-[96vw] mx-auto p-4 flex flex-col gap-8">
         {/* Top: full-width columns row (drag & drop board) */}
         <section>
           <BedSwapBoard />

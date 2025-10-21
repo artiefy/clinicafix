@@ -1,0 +1,3 @@
+ALTER TABLE patients
+  ADD COLUMN IF NOT EXISTS diagnostico VARCHAR(256),
+  ADD COLUMN IF NOT EXISTS procedimiento VARCHAR(256);

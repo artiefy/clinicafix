@@ -19,7 +19,7 @@ export const beds = createTable(
   (d) => ({
     id: d.serial().primaryKey(),
     room_id: d.integer().notNull().references(() => rooms.id),
-    status: d.varchar({ length: 32 }).notNull(), // disponible, ocupada, limpieza, reservada
+    status: d.varchar({ length: 32 }).notNull(), // Disponible, Ocupada, Limpieza, Mantenimiento, Aislamiento, Reserva
     last_update: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
   }),
   (t) => [index("beds_status_idx").on(t.status)]
@@ -31,12 +31,27 @@ export const patients = createTable(
   (d) => ({
     id: d.serial().primaryKey(),
     name: d.varchar({ length: 128 }).notNull(),
-    // allow NULL to represent "sin cama"
     bed_id: d.integer().references(() => beds.id),
-    discharge_status: d.varchar({ length: 32 }).notNull(), // pendiente, en_proceso, completado
-    estimated_time: d.time(), // hora estimada de egreso
+    diagnostico: d.varchar({ length: 256 }),
+    procedimiento: d.varchar({ length: 256 }),
+    pre_egreso: d.varchar({ length: 128 }),
+    diagnosticos_procedimientos: d.text(),
+    discharge_status: d.varchar({ length: 32 }).notNull(),
+    estimated_time: d.time(),
   }),
   (t) => [index("patients_discharge_status_idx").on(t.discharge_status)]
+);
+
+// Tabla de historial de paciente (patient_history)
+export const patient_history = createTable(
+  "patient_history",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    patient_id: d.integer().notNull().references(() => patients.id),
+    tipo: d.varchar({ length: 16 }).notNull(), // texto | audio
+    contenido: d.text().notNull(),
+    fecha: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  })
 );
 
 // Tabla de egresos (discharges)
