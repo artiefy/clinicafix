@@ -1401,7 +1401,7 @@ export default function BedSwapBoard() {
                           >
                             {assigned.name}
                           </button>
-                          <div className="text-xs">Diagnóstico / Proced.: {getPatientDiagnostics(assigned)}</div>
+                          {/* eliminado: no mostrar diagnóstico/procedimiento aquí */}
                         </div>
                       ) : (
                         <div className="mt-2 text-sm text-gray-300">Sin paciente</div>
@@ -1634,12 +1634,12 @@ export default function BedSwapBoard() {
                             console.error("Error actualizando aux_status:", err);
                           }
                         }}
-                        className="w-full bg-white/10 text-white rounded p-1"
+                        className={`w-full rounded p-1 ${auxStatusClass(bed.aux_status ?? "Limpieza")}`}
                       >
-                        <option value="Limpieza" className="text-green-600">Limpieza</option>
-                        <option value="Mantenimiento" className="text-blue-600">Mantenimiento</option>
-                        <option value="Aislamiento" className="text-red-600">Aislamiento</option>
-                        <option value="Reserva" className="text-purple-600">Reserva</option>
+                        <option value="Limpieza">Limpieza</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Aislamiento">Aislamiento</option>
+                        <option value="Reserva">Reserva</option>
                       </select>
                     </div>
                     {/* assigned info */}
@@ -2100,4 +2100,20 @@ export default function BedSwapBoard() {
       )}
     </div>
   );
+}
+
+// Helper: devuelve clases de color para aux_status (fondo + texto blanco)
+function auxStatusClass(s?: AuxBedStatus | null) {
+  switch (s) {
+    case "Limpieza":
+      return "bg-green-600 text-white";
+    case "Mantenimiento":
+      return "bg-blue-600 text-white";
+    case "Aislamiento":
+      return "bg-red-600 text-white";
+    case "Reserva":
+      return "bg-purple-600 text-white";
+    default:
+      return "bg-white/10 text-white";
+  }
 }
