@@ -1,6 +1,7 @@
 import { Geist } from "next/font/google";
 
 import SWRProviderClient from "@/components/SWRProviderClient";
+import Toasts from "@/components/Toasts";
 
 import type { Metadata } from "next";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
         </header>
 
         <SWRProviderClient>
+          <Toasts />
           {children}
         </SWRProviderClient>
       </body>

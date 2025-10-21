@@ -9,15 +9,16 @@ export type BedStatus =
   | "Limpieza"
   | "Diagnostico y Procedimiento"
   | "Pre-egreso"
-  | "Mantenimiento"
-  | "Aislamiento"
-  | "Reserva";
+
+// Nuevo: estados específicos para la columna Limpieza
+export type AuxBedStatus = "Limpieza" | "Mantenimiento" | "Aislamiento" | "Reserva";
 
 export interface Bed {
   id: number;
   room_id: number;
   status: BedStatus;
   last_update: Date | string;
+  aux_status?: AuxBedStatus | null;
 }
 
 // Estados de paciente y columnas ordenadas
@@ -58,6 +59,14 @@ export interface Discharge {
   bed_id: number;
   status: string;
   expected_time: Date | string | null;
+  created_at: Date | string;
+}
+
+// New: procedimiento individual relacionado a paciente
+export interface Procedure {
+  id: number;
+  patient_id: number;
+  descripcion: string;
   created_at: Date | string;
 }
 

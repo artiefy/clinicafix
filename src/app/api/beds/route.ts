@@ -25,19 +25,37 @@ export async function PUT(request: Request) {
     }
     const maybeId = (body as Record<string, unknown>).id;
     const maybeStatus = (body as Record<string, unknown>).status;
+    const maybeAux = (body as Record<string, unknown>).aux_status;
 
     const id = typeof maybeId === "number" ? maybeId : Number(maybeId);
-    if (!Number.isFinite(id) || typeof maybeStatus !== "string") {
+    if (!Number.isFinite(id)) {
       return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
     }
-    const status = maybeStatus;
+
+    const status = typeof maybeStatus === "string" ? maybeStatus : undefined;
+    const aux_status = typeof maybeAux === "string" ? String(maybeAux) : undefined;
+
+    // Si se pasó aux_status, validar valores permitidos
+    const allowedAux = ["Limpieza", "Mantenimiento", "Aislamiento", "Reserva"];
+    if (typeof aux_status === "string" && !allowedAux.includes(aux_status)) {
+      return NextResponse.json({ error: "aux_status inválido" }, { status: 400 });
+    }
 
     // Actualizamos last_update también al marcar como Disponible, Limpieza o Ocupada
-    if (status === "Disponible" || status === "Limpieza" || status === "Ocupada") {
-      await db.update(beds).set({ status, last_update: new Date() }).where(sql`${beds.id} = ${id}`);
-    } else {
-      await db.update(beds).set({ status }).where(sql`${beds.id} = ${id}`);
+    const updateFields: Record<string, unknown> = {};
+    if (typeof status === "string") {
+      updateFields.status = status;
+      updateFields.last_update = new Date();
     }
+    if (typeof aux_status === "string") {
+      updateFields.aux_status = aux_status;
+      updateFields.last_update = new Date();
+    }
+    // si no hay fields válidos, error
+    if (Object.keys(updateFields).length === 0) {
+      return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
+    }
+    await db.update(beds).set(updateFields).where(sql`${beds.id} = ${id}`);
 
     const updated = await db.select().from(beds).where(sql`${beds.id} = ${id}`);
     return NextResponse.json(updated[0] ?? null);

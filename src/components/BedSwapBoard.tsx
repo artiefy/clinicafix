@@ -5,7 +5,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import useSWR, { useSWRConfig } from "swr";
 
-import { Bed, Discharge, Patient, Room } from "@/types"; // <-- añadí Discharge
+import { showToast } from "@/components/toastService";
+import { AuxBedStatus, Bed, Discharge, Patient, Procedure, Room } from "@/types"; // <-- añadí Discharge + Procedure
 import { to12Hour, to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
 
 function formatDate(date: Date | string | null | undefined) {
@@ -85,18 +86,7 @@ export default function BedSwapBoard() {
   // --- NOTAS: estado local para diagnósticos/procedimientos (textarea en la columna Diagnóstico/Proced.) ---
   const [diagnosticNotes, setDiagnosticNotes] = useState<Record<number, string>>({});
 
-  // Inicializar/merge desde pacientes al cargar/actualizar
-  useEffect(() => {
-    const map: Record<number, string> = {};
-    (patients ?? []).forEach((p) => {
-      if (getPatientEffectiveStatus(p) === "diagnosticos_procedimientos") {
-        map[p.id] = String(p.diagnosticos_procedimientos ?? "");
-      }
-    });
-    setDiagnosticNotes((prev: Record<number, string>) => ({ ...map, ...prev }));
-  }, [patients]);
-
-  // Guardado al backend (onBlur). Revalida SWR tras guardar.
+  // Guardado al backend (onBlur / modal). Revalida SWR tras guardar.
   const saveDiagnosticNote = useCallback(
     async (patientId: number, text: string) => {
       try {
@@ -105,12 +95,56 @@ export default function BedSwapBoard() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ diagnosticos_procedimientos: text }),
         });
+        // revalidar lista de pacientes para sincronizar UI
         void mutate("/api/patients");
       } catch (err) {
         console.error("Error guardando nota diagnóstica:", err);
       }
     },
     [mutate],
+  );
+
+  // Modals & procedures state
+  const [openDiagFor, setOpenDiagFor] = useState<number | null>(null);
+  const [openProcFor, setOpenProcFor] = useState<number | null>(null);
+  const [procList, setProcList] = useState<Record<number, Procedure[]>>({});
+  const [procInput, setProcInput] = useState<string>("");
+
+  // Cargar procedimientos de un paciente al abrir modal
+  const loadProcedures = useCallback(async (patientId: number) => {
+    try {
+      const res = await fetch(`/api/procedures?patientId=${patientId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setProcList((prev) => ({ ...prev, [patientId]: Array.isArray(data) ? data : [] }));
+    } catch (e) {
+      console.error("Error cargando procedimientos:", e);
+    }
+  }, []);
+
+  // Agregar procedimiento (optimistic + persist)
+  const addProcedure = useCallback(
+    async (patientId: number) => {
+      if (!procInput.trim()) return;
+      const temp: Procedure = { id: Date.now(), patient_id: patientId, descripcion: procInput.trim(), created_at: new Date().toISOString() };
+      // optimistic
+      setProcList((prev) => ({ ...prev, [patientId]: [...(prev[patientId] ?? []), temp] }));
+      setProcInput("");
+      try {
+        const res = await fetch("/api/procedures", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patient_id: patientId, descripcion: temp.descripcion }),
+        });
+        if (res.ok) {
+          // recargar para sincronizar ids reales
+          void loadProcedures(patientId);
+        }
+      } catch (e) {
+        console.error("Error guardando procedimiento:", e);
+      }
+    },
+    [procInput, loadProcedures],
   );
 
   // dragging state: { type: 'bed' | 'patient' | null, id?: number }
@@ -285,6 +319,12 @@ export default function BedSwapBoard() {
           ),
         ),
       );
+      // show toast for Limpieza / Disponible
+      if (status === "Limpieza") {
+        showToast({ title: `Cama ${bedId} — En limpieza`, description: "Se inició el proceso de limpieza.", type: "warning" });
+      } else if (status === "Disponible") {
+        showToast({ title: `Cama ${bedId} — Disponible`, description: "La cama quedó disponible.", type: "success" });
+      }
       // revalidate beds & related caches
       void mutate("/api/beds");
       void mutate("/api/rooms");
@@ -328,6 +368,8 @@ export default function BedSwapBoard() {
               console.warn("PUT /api/beds failed (mark Disponible):", err);
             });
             setBeds((prev) => sortBeds(prev.map((b) => (b.id === prevBedId ? { ...b, status: "Disponible", last_update: now } : b))));
+            // toast
+            showToast({ title: `Cama ${prevBedId} — Disponible`, description: "Paciente desasignado, cama disponible.", type: "success" });
           }
         } else {
           // discharged: set patient status and free bed
@@ -1041,8 +1083,6 @@ export default function BedSwapBoard() {
                   >
                     <div className="font-bold">{p.name}</div>
                     <div className="text-xs">Hora De Ingreso: {p.estimated_time ? to12Hour(p.estimated_time) : "—"}</div>
-                    <div className="text-xs">Diagnóstico / Proced.: {getPatientDiagnostics(p)}</div>
-                    <div className="text-xs">Egreso: {p.pre_egreso ?? "—"}</div>
                   </div>
                 ))
               )}
@@ -1156,18 +1196,33 @@ export default function BedSwapBoard() {
                     <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                     <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
                     {assigned ? (
-                      // tarjeta: título + textarea editable para que el personal agregue procedimientos/diagnóstico
-                      <div className="mt-2 bg-white/5 p-2 rounded">
+                      // Reemplazamos textarea por botones que abren modales
+                      <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
                         <div className="font-medium mb-1">{assigned.name}</div>
-                        <label htmlFor={`diag-${assigned.id}`} className="sr-only">Notas diagnóstico / procedimiento</label>
-                        <textarea
-                          id={`diag-${assigned.id}`}
-                          value={diagnosticNotes[assigned.id] ?? ""}
-                          onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [assigned.id]: e.target.value }))}
-                          onBlur={(e) => void saveDiagnosticNote(assigned.id, e.target.value)}
-                          placeholder="Anotar diagnóstico y procedimientos realizados..."
-                          className="w-full min-h-[64px] text-sm p-2 rounded bg-white/10 placeholder-gray-300 resize-vertical"
-                        />
+
+                        {/* stacked buttons to avoid overflow */}
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm text-center"
+                            onClick={() => {
+                              setOpenDiagFor(assigned.id);
+                            }}
+                          >
+                            Ver diagnóstico
+                          </button>
+
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm text-center"
+                            onClick={() => {
+                              setOpenProcFor(assigned.id);
+                              void loadProcedures(assigned.id);
+                            }}
+                          >
+                            Ver procedimientos
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1202,9 +1257,28 @@ export default function BedSwapBoard() {
                     <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                     <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
                     {assigned ? (
-                      <div className="mt-2 bg-white/5 p-2 rounded">
-                        <div className="font-medium">{assigned.name}</div>
-                        <div className="text-xs">Diagnóstico / Proced.: {getPatientDiagnostics(assigned)}</div>
+                      // show name + stacked action buttons (diagnostic / procedures)
+                      <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                        <div className="font-medium mb-1">{assigned.name}</div>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm text-center"
+                            onClick={() => setOpenDiagFor(assigned.id)}
+                          >
+                            Ver diagnóstico
+                          </button>
+                          <button
+                            type="button"
+                            className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm text-center"
+                            onClick={() => {
+                              setOpenProcFor(assigned.id);
+                              void loadProcedures(assigned.id);
+                            }}
+                          >
+                            Ver procedimientos
+                          </button>
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1227,11 +1301,29 @@ export default function BedSwapBoard() {
               {dischargedPatients.map((p: Patient & { discharge_time?: string | null }) => (
                 <div key={p.id} className="mb-2 bg-white/20 rounded shadow p-2">
                   <div className="font-bold">{p.name}</div>
-                  <div className="text-xs">
-                    Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}
+                  <div className="text-xs">Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}</div>
+                  {/* actions + history view */}
+                  <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm text-center"
+                        onClick={() => setOpenDiagFor(p.id)}
+                      >
+                        Ver diagnóstico
+                      </button>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm text-center"
+                        onClick={() => {
+                          setOpenProcFor(p.id);
+                          void loadProcedures(p.id);
+                        }}
+                      >
+                        Ver procedimientos
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-xs">Diagnóstico / Proced.: {getPatientDiagnostics(p)}</div>
-                  <div className="text-xs">Egreso: {p.pre_egreso ?? "—"}</div>
                 </div>
               ))}
             </div>
@@ -1258,12 +1350,42 @@ export default function BedSwapBoard() {
                 return (
                   <div
                     key={bed.id}
-                    data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient ? String(bed.id) : undefined}
+                    data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient && (bed.status !== "Limpieza" || bed.aux_status === "Limpieza") ? String(bed.id) : undefined}
                     data-drop-bed={String(bed.id)}
                     className={`mb-2 rounded shadow p-2 bg-yellow-500/10 border-l-4 border-yellow-500 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""}`}
                   >
                     <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                     <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+
+                    {/* Select only visible in Limpieza column to set aux_status */}
+                    <div className="mt-2">
+                      <label className="text-xs block mb-1">Estado limpieza</label>
+                      <select
+                        value={bed.aux_status ?? "Limpieza"}
+                        onChange={async (e) => {
+                          const val = e.target.value as AuxBedStatus;
+                          // optimistic update
+                          setBeds((prev) => prev.map((b) => (b.id === bed.id ? { ...b, aux_status: val } : b)));
+                          try {
+                            await fetch("/api/beds", {
+                              method: "PUT",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ id: bed.id, aux_status: val }),
+                            });
+                            void mutate("/api/beds");
+                          } catch (err) {
+                            console.error("Error actualizando aux_status:", err);
+                          }
+                        }}
+                        className="w-full bg-white/10 text-white rounded p-1"
+                      >
+                        <option value="Limpieza" className="text-green-600">Limpieza</option>
+                        <option value="Mantenimiento" className="text-blue-600">Mantenimiento</option>
+                        <option value="Aislamiento" className="text-red-600">Aislamiento</option>
+                        <option value="Reserva" className="text-purple-600">Reserva</option>
+                      </select>
+                    </div>
+                    {/* assigned info */}
                   </div>
                 );
               })}
@@ -1271,6 +1393,71 @@ export default function BedSwapBoard() {
           </div>
         </div>
       </div>
+
+      {/* Modales (render fuera del flujo de columnas, al final del componente) */}
+      {/* Diagnosis modal */}
+      {openDiagFor !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setOpenDiagFor(null)} />
+          <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
+            <h3 className="font-bold mb-2">Editar diagnóstico</h3>
+            <textarea
+              className="w-full min-h-[120px] p-2 border rounded"
+              value={diagnosticNotes[openDiagFor] ?? ""}
+              onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [openDiagFor]: e.target.value }))}
+            />
+            <div className="flex justify-end gap-2 mt-3">
+              <button className="px-3 py-1 rounded bg-gray-200" onClick={() => setOpenDiagFor(null)}>Cancelar</button>
+              <button
+                className="px-3 py-1 rounded bg-blue-600 text-white"
+                onClick={async () => {
+                  await saveDiagnosticNote(openDiagFor, diagnosticNotes[openDiagFor] ?? "");
+                  setOpenDiagFor(null);
+                }}
+              >
+                Guardar diagnóstico
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Procedures modal */}
+      {openProcFor !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProcFor(null)} />
+          <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
+            <h3 className="font-bold mb-2">Procedimientos</h3>
+            <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+              {(procList[openProcFor] ?? []).map((proc) => (
+                <div key={proc.id} className="p-2 border rounded">
+                  <div className="text-xs text-gray-500">{new Date(proc.created_at).toLocaleString()}</div>
+                  <div className="mt-1">{proc.descripcion}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <input
+                className="flex-1 p-2 border rounded"
+                placeholder="Agregar nuevo procedimiento..."
+                value={procInput}
+                onChange={(e) => setProcInput(e.target.value)}
+              />
+              <button
+                className="px-3 py-1 rounded bg-green-600 text-white"
+                onClick={async () => {
+                  if (openProcFor) await addProcedure(openProcFor);
+                }}
+              >
+                Guardar procedimiento
+              </button>
+            </div>
+            <div className="flex justify-end gap-2 mt-3">
+              <button className="px-3 py-1 rounded bg-gray-200" onClick={() => setOpenProcFor(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ export const beds = createTable(
     id: d.serial().primaryKey(),
     room_id: d.integer().notNull().references(() => rooms.id),
     status: d.varchar({ length: 32 }).notNull(), // Disponible, Ocupada, Limpieza, Mantenimiento, Aislamiento, Reserva
+    aux_status: d.varchar({ length: 32 }), // Nuevo: estado auxiliar para la columna "Limpieza" (Limpieza, Mantenimiento, Aislamiento, Reserva)
     last_update: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
   }),
   (t) => [index("beds_status_idx").on(t.status)]
@@ -100,4 +101,16 @@ export const posts = createTable(
     updated_at: d.timestamp({ withTimezone: true }).$onUpdate(() => new Date()),
   }),
   (t) => [index("name_idx").on(t.name)]
+);
+
+// New: tabla de procedimientos por paciente
+export const procedures = createTable(
+  "procedures",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    patient_id: d.integer().notNull().references(() => patients.id),
+    descripcion: d.text().notNull(),
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("procedures_patient_idx").on(t.patient_id)]
 );
