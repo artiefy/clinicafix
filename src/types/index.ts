@@ -43,6 +43,21 @@ export interface Patient {
   pre_egreso?: string;
   discharge_status?: PatientStatus;
   estimated_time: string | null;
+  // audio asociado al diagnóstico (si se graba desde la UI)
+  diagnostic_audio_url?: string | null;
+  diagnostic_audio_recorded_at?: Date | string | null;
+  diagnostic_audio_duration_seconds?: number | null;
+}
+
+// Nuevo: audios de diagnóstico (tabla independiente)
+export interface DiagnosticAudio {
+  id: number;
+  patient_id: number;
+  audio_url: string;
+  audio_recorded_at?: Date | string | null;
+  audio_duration_seconds?: number | null;
+  audio_mime?: string | null;
+  created_at: Date | string;
 }
 
 export interface PatientHistory {
@@ -67,6 +82,21 @@ export interface Procedure {
   id: number;
   patient_id: number;
   descripcion: string;
+  created_at: Date | string;
+  // ahora los audios se guardan en la tabla procedure_audios (varios por procedimiento)
+  // campo opcional para compatibilidad con UI (puede venir del backend como convenience)
+  audio_url?: string | null;
+}
+
+// Nuevo: registros de audio asociados a procedimientos (múltiples por procedimiento)
+export interface ProcedureAudio {
+  id: number;
+  procedure_id: number;
+  patient_id: number;
+  audio_url: string;
+  audio_recorded_at?: Date | string | null;
+  audio_duration_seconds?: number | null;
+  audio_mime?: string | null;
   created_at: Date | string;
 }
 

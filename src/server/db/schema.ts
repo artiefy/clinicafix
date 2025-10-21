@@ -114,3 +114,34 @@ export const procedures = createTable(
   }),
   (t) => [index("procedures_patient_idx").on(t.patient_id)]
 );
+
+// Nuevo: tabla para audios de DIAGNÓSTICO (varios registros por paciente si se necesita)
+export const diagnostic_audios = createTable(
+  "diagnostic_audios",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    patient_id: d.integer().notNull().references(() => patients.id),
+    audio_url: d.varchar({ length: 512 }).notNull(),
+    audio_recorded_at: d.timestamp({ withTimezone: true }),
+    audio_duration_seconds: d.integer(),
+    audio_mime: d.varchar({ length: 64 }),
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("diagnostic_audios_patient_idx").on(t.patient_id)]
+);
+
+// Nuevo: tabla para almacenar varios audios por procedimiento
+export const procedure_audios = createTable(
+  "procedure_audios",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    procedure_id: d.integer().notNull().references(() => procedures.id),
+    patient_id: d.integer().notNull().references(() => patients.id),
+    audio_url: d.varchar({ length: 512 }).notNull(),
+    audio_recorded_at: d.timestamp({ withTimezone: true }),
+    audio_duration_seconds: d.integer(),
+    audio_mime: d.varchar({ length: 64 }),
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("procedure_audios_procedure_idx").on(t.procedure_id), index("procedure_audios_patient_idx").on(t.patient_id)]
+);

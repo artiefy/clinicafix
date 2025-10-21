@@ -58,48 +58,50 @@ export default function EgressTracker() {
   return (
     <section className="bg-white/10 rounded-xl p-6 text-white shadow">
       <h3 className="text-xl font-bold mb-4">Salidas De Pacientes</h3>
-      <table className="w-full table-fixed text-left">
-        <colgroup>
-          <col className="w-1/6" />
-          <col className="w-1/6" />
-          <col className="w-1/6" />
-          <col className="w-1/6" />
-          <col className="w-1/6" />
-          <col className="w-1/6" />
-        </colgroup>
-        <thead>
-          <tr>
-            <th className="px-4 py-2">#</th>
-            <th className="px-4 py-2">Paciente</th>
-            <th className="px-4 py-2">Cama</th>
-            <th className="px-4 py-2">Habitación</th>
-            <th className="px-4 py-2">Hora de Entrada</th>
-            <th className="px-4 py-2">Hora De Salida</th>
-            <th className="px-4 py-2">Tiempo en clínica</th>
-          </tr>
-        </thead>
-        <tbody>
-          {disList.map((discharge, idx) => {
-            const patient = patientList.find((p) => p.name === discharge.patient);
-            const adm = getAdmissionDateTime(patient, discharge);
-            const out = discharge.expected_time ? new Date(String(discharge.expected_time)) : null;
-            const durMs = adm && out ? Math.max(0, out.getTime() - adm.getTime()) : 0;
-            return (
-              <tr key={discharge.id}>
-                <td className="px-4 py-2">{idx + 1}</td>
-                <td className="px-4 py-2">{discharge.patient}</td>
-                <td className="px-4 py-2">{discharge.bed_id}</td>
-                <td className="px-4 py-2">{getRoomNumberForBed(discharge.bed_id)}</td>
-                <td className="px-4 py-2">
-                  {adm ? (adm.toString().includes("GMT") ? to12HourWithDate(adm) : to12HourWithDate(adm)) : "—"}
-                </td>
-                <td className="px-4 py-2">{out ? to12HourWithDate(out) : "—"}</td>
-                <td className="px-4 py-2">{durMs > 0 ? formatDuration(durMs) : "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed text-left text-sm">
+          <colgroup>
+            <col style={{ width: "6%" }} />
+            <col style={{ width: "30%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "16%" }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th className="px-2 py-1">#</th>
+              <th className="px-2 py-1">Paciente</th>
+              <th className="px-2 py-1">Cama</th>
+              <th className="px-2 py-1">Habitación</th>
+              <th className="px-2 py-1">Hora de Entrada</th>
+              <th className="px-2 py-1">Hora De Salida</th>
+              <th className="px-2 py-1">Tiempo en clínica</th>
+            </tr>
+          </thead>
+          <tbody>
+            {disList.map((discharge, idx) => {
+              const patient = patientList.find((p) => p.name === discharge.patient);
+              const adm = getAdmissionDateTime(patient, discharge);
+              const out = discharge.expected_time ? new Date(String(discharge.expected_time)) : null;
+              const durMs = adm && out ? Math.max(0, out.getTime() - adm.getTime()) : 0;
+              return (
+                <tr key={discharge.id}>
+                  <td className="px-2 py-1 text-xs">{idx + 1}</td>
+                  <td className="px-2 py-1 truncate">{discharge.patient}</td>
+                  <td className="px-2 py-1 text-xs">{discharge.bed_id}</td>
+                  <td className="px-2 py-1 text-xs">{getRoomNumberForBed(discharge.bed_id)}</td>
+                  <td className="px-2 py-1">{adm ? to12HourWithDate(adm) : "—"}</td>
+                  <td className="px-2 py-1">{out ? to12HourWithDate(out) : "—"}</td>
+                  <td className="px-2 py-1 whitespace-nowrap">{durMs > 0 ? formatDuration(durMs) : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

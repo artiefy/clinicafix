@@ -86,16 +86,53 @@ export default function BedSwapBoard() {
   // --- NOTAS: estado local para diagnósticos/procedimientos (textarea en la columna Diagnóstico/Proced.) ---
   const [diagnosticNotes, setDiagnosticNotes] = useState<Record<number, string>>({});
 
+  // Modals & procedures state
+  const [openDiagFor, setOpenDiagFor] = useState<number | null>(null);
+  const [openProcFor, setOpenProcFor] = useState<number | null>(null);
+  const [procList, setProcList] = useState<Record<number, Procedure[]>>({});
+  const [procInput, setProcInput] = useState<string>("");
+  const [procAudio, setProcAudio] = useState<File | null>(null); // nuevo estado para audio (subida)
+  // edición / borrado de procedimientos (frontend)
+  const [editingProcId, setEditingProcId] = useState<number | null>(null);
+  const [editProcDesc, setEditProcDesc] = useState<Record<number, string>>({});
+  // Recording state for procedures (in-modal recorder)
+  const [procRecording, setProcRecording] = useState<boolean>(false);
+  const procRecorderRef = useRef<MediaRecorder | null>(null);
+  const procChunksRef = useRef<BlobPart[]>([]);
+  const [procBlobRecorded, setProcBlobRecorded] = useState<Blob | null>(null);
+  const [procUrlRecorded, setProcUrlRecorded] = useState<string | null>(null);
+  const [procDurationRecorded, setProcDurationRecorded] = useState<number | null>(null);
+  const procStartRef = useRef<number | null>(null);
+  // Recording state for DIAGNÓSTICO (fueron los identificadores que faltaban)
+  const [diagRecording, setDiagRecording] = useState<boolean>(false);
+  const diagRecorderRef = useRef<MediaRecorder | null>(null);
+  const diagChunksRef = useRef<BlobPart[]>([]);
+  const [diagBlob, setDiagBlob] = useState<Blob | null>(null);
+  const [diagUrl, setDiagUrl] = useState<string | null>(null);
+  const [diagDuration, setDiagDuration] = useState<number | null>(null);
+  const diagStartRef = useRef<number | null>(null);
   // Guardado al backend (onBlur / modal). Revalida SWR tras guardar.
   const saveDiagnosticNote = useCallback(
-    async (patientId: number, text: string) => {
+    async (patientId: number, text: string, audioBlob?: Blob, recordedAt?: string, durationSeconds?: number) => {
       try {
-        await fetch(`/api/patients/${patientId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ diagnosticos_procedimientos: text }),
-        });
-        // revalidar lista de pacientes para sincronizar UI
+        if (audioBlob) {
+          const fd = new FormData();
+          fd.append("diagnosticos_procedimientos", text ?? "");
+          fd.append("file", audioBlob, `diagnosis-${Date.now()}.webm`);
+          if (recordedAt) fd.append("recorded_at", recordedAt);
+          if (typeof durationSeconds === "number") fd.append("duration_seconds", String(durationSeconds));
+          // POST a endpoint que maneje multipart (backend debe implementar)
+          await fetch(`/api/patients/${patientId}/diagnosis`, {
+            method: "POST",
+            body: fd,
+          });
+        } else {
+          await fetch(`/api/patients/${patientId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ diagnosticos_procedimientos: text }),
+          });
+        }
         void mutate("/api/patients");
       } catch (err) {
         console.error("Error guardando nota diagnóstica:", err);
@@ -103,12 +140,6 @@ export default function BedSwapBoard() {
     },
     [mutate],
   );
-
-  // Modals & procedures state
-  const [openDiagFor, setOpenDiagFor] = useState<number | null>(null);
-  const [openProcFor, setOpenProcFor] = useState<number | null>(null);
-  const [procList, setProcList] = useState<Record<number, Procedure[]>>({});
-  const [procInput, setProcInput] = useState<string>("");
 
   // Cargar procedimientos de un paciente al abrir modal
   const loadProcedures = useCallback(async (patientId: number) => {
@@ -121,31 +152,125 @@ export default function BedSwapBoard() {
       console.error("Error cargando procedimientos:", e);
     }
   }, []);
-
-  // Agregar procedimiento (optimistic + persist)
+  // Agregar procedimiento (texto o audio). Prioriza procBlobRecorded (grabado) sobre procAudio (archivo seleccionado).
   const addProcedure = useCallback(
     async (patientId: number) => {
-      if (!procInput.trim()) return;
-      const temp: Procedure = { id: Date.now(), patient_id: patientId, descripcion: procInput.trim(), created_at: new Date().toISOString() };
-      // optimistic
+      if (!procInput.trim() && !procAudio && !procBlobRecorded) return;
+      const temp: Procedure = {
+        id: Date.now(),
+        patient_id: patientId,
+        descripcion: procInput.trim() || "(audio)",
+        created_at: new Date().toISOString(),
+        audio_url: procUrlRecorded ?? (procAudio ? URL.createObjectURL(procAudio) : undefined),
+      };
+      // optimistic: añadir temp a la lista
       setProcList((prev) => ({ ...prev, [patientId]: [...(prev[patientId] ?? []), temp] }));
       setProcInput("");
+      const localFile = procAudio;
+      const localRecorded = procBlobRecorded;
+      const localRecordedDuration = procDurationRecorded;
+      setProcAudio(null);
+      setProcBlobRecorded(null);
+      setProcUrlRecorded(null);
+      setProcDurationRecorded(null);
       try {
-        const res = await fetch("/api/procedures", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ patient_id: patientId, descripcion: temp.descripcion }),
-        });
-        if (res.ok) {
-          // recargar para sincronizar ids reales
-          void loadProcedures(patientId);
+        let res: Response | undefined;
+        if (localRecorded) {
+          const fd = new FormData();
+          fd.append("patient_id", String(patientId));
+          fd.append("descripcion", temp.descripcion);
+          fd.append("file", new File([localRecorded], `procedure-${Date.now()}.webm`, { type: localRecorded.type || "audio/webm" }));
+          if (localRecordedDuration) fd.append("duration_seconds", String(localRecordedDuration));
+          res = await fetch("/api/procedures", { method: "POST", body: fd });
+        } else if (localFile) {
+          const fd = new FormData();
+          fd.append("patient_id", String(patientId));
+          fd.append("descripcion", temp.descripcion);
+          fd.append("file", localFile, localFile.name);
+          res = await fetch("/api/procedures", { method: "POST", body: fd });
+        } else {
+          res = await fetch("/api/procedures", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ patient_id: patientId, descripcion: temp.descripcion }),
+          });
+        }
+        // Si backend devuelve el objeto creado, reemplazar la entrada temporal
+        if (res?.ok) {
+          let createdRaw: unknown = null;
+          try {
+            createdRaw = await res.json();
+          } catch {
+            createdRaw = null;
+          }
+          // validar shape sin usar `any`
+          if (
+            createdRaw &&
+            typeof createdRaw === "object" &&
+            "id" in createdRaw &&
+            typeof (createdRaw as Record<string, unknown>).id === "number"
+          ) {
+            const createdProc = createdRaw as Procedure;
+            setProcList((prev) => ({
+              ...prev,
+              [patientId]: (prev[patientId] ?? []).map((p) => (p.id === temp.id ? createdProc : p)),
+            }));
+          }
+        } else {
+          // fallback: recargar la lista si algo falló en el POST (intentar una sola vez)
+          await loadProcedures(patientId);
         }
       } catch (e) {
         console.error("Error guardando procedimiento:", e);
+        // revert optimistic: recargar desde servidor
+        await loadProcedures(patientId);
       }
     },
-    [procInput, loadProcedures],
+    [procInput, procAudio, procBlobRecorded, procUrlRecorded, procDurationRecorded, loadProcedures],
   );
+  // Editar procedimiento — actualiza localmente para evitar GETs dobles
+  const saveProcedureEdit = useCallback(async (procId: number, patientId: number) => {
+    const newText = (editProcDesc[procId] ?? "").trim();
+    if (!newText) return;
+    try {
+      const res = await fetch(`/api/procedures/${procId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ descripcion: newText }),
+      });
+      if (!res.ok) throw new Error("Error actualizando procedimiento");
+      // optimistic local update (no GET adicional)
+      setProcList((prev) => ({
+        ...prev,
+        [patientId]: (prev[patientId] ?? []).map((p) => (p.id === procId ? { ...p, descripcion: newText } : p)),
+      }));
+      setEditingProcId(null);
+    } catch (err) {
+      console.error("Error guardando procedimiento:", err);
+      // fallback: recargar
+      await loadProcedures(patientId);
+    }
+  }, [editProcDesc, loadProcedures]);
+
+  // Borrar procedimiento — actualiza localmente para evitar GETs dobles
+  const deleteProcedure = useCallback(async (procId: number, patientId: number) => {
+    if (!confirm("¿Eliminar este procedimiento? Esta acción no puede deshacerse.")) return;
+    try {
+      const res = await fetch(`/api/procedures/${procId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Error eliminando procedimiento");
+      // optimistic local removal
+      setProcList((prev) => ({
+        ...prev,
+        [patientId]: (prev[patientId] ?? []).filter((p) => p.id !== procId),
+      }));
+      // limpiar edición si necesaria
+      if (editingProcId === procId) setEditingProcId(null);
+    } catch (err) {
+      console.error("Error eliminando procedimiento:", err);
+      // fallback: recargar
+      await loadProcedures(patientId);
+    }
+  }, [loadProcedures, editingProcId]);
 
   // dragging state: { type: 'bed' | 'patient' | null, id?: number }
   const [_dragging, setDragging] = useState<{ type: "bed" | "patient" | null; id?: number }>({ type: null });
@@ -532,7 +657,7 @@ export default function BedSwapBoard() {
                 const tb = b.last_update ? new Date(b.last_update).getTime() : 0;
                 return tb - ta;
               })[0];
-            setHighlightBedId(mostRecentAvailable ? mostRecentAvailable.id : null);
+            setHighlightBedId(mostRecentAvailable?.id ?? null);
           } else {
             // paciente con cama u otros:
             // - si viene de diagnóstico/procedimiento permitir mover a Ocupada (Atención Médica) y Disponible
@@ -1401,18 +1526,82 @@ export default function BedSwapBoard() {
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpenDiagFor(null)} />
           <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
             <h3 className="font-bold mb-2">Editar diagnóstico</h3>
+            <div className="text-xs text-gray-600 mb-2">
+              Ahora: {to12HourWithDate(new Date())}
+            </div>
             <textarea
               className="w-full min-h-[120px] p-2 border rounded"
               value={diagnosticNotes[openDiagFor] ?? ""}
               onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [openDiagFor]: e.target.value }))}
             />
+
+            {/* Recording UI para diagnóstico */}
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={`px-3 py-1 rounded ${diagRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
+                  onClick={async () => {
+                    // start / stop recording
+                    if (!diagRecording) {
+                      try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const mr = new MediaRecorder(stream);
+                        diagRecorderRef.current = mr;
+                        diagChunksRef.current = [];
+                        diagStartRef.current = Date.now();
+                        mr.ondataavailable = (ev) => diagChunksRef.current.push(ev.data);
+                        mr.onstop = () => {
+                          const blob = new Blob(diagChunksRef.current, { type: "audio/webm" });
+                          setDiagBlob(blob);
+                          const url = URL.createObjectURL(blob);
+                          setDiagUrl(url);
+                          const dur = diagStartRef.current ? Math.round((Date.now() - diagStartRef.current) / 1000) : null;
+                          setDiagDuration(dur);
+                        };
+                        mr.start();
+                        setDiagRecording(true);
+                      } catch (err) {
+                        console.error("No se pudo acceder al micrófono:", err);
+                      }
+                    } else {
+                      // stop
+                      diagRecorderRef.current?.stop();
+                      diagRecorderRef.current = null;
+                      setDiagRecording(false);
+                    }
+                  }}
+                >
+                  {diagRecording ? "Detener" : "Grabar audio"}
+                </button>
+                {diagUrl ? (
+                  <audio controls src={diagUrl} className="w-48" />
+                ) : null}
+                {diagDuration ? <div className="text-xs text-gray-500">Duración: {Math.floor(diagDuration / 60)}:{String(diagDuration % 60).padStart(2, '0')}</div> : null}
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2 mt-3">
-              <button className="px-3 py-1 rounded bg-gray-200" onClick={() => setOpenDiagFor(null)}>Cancelar</button>
+              <button className="px-3 py-1 rounded bg-gray-200" onClick={() => {
+                setOpenDiagFor(null);
+                setDiagBlob(null);
+                setDiagUrl(null);
+                setDiagDuration(null);
+              }}>Cancelar</button>
               <button
                 className="px-3 py-1 rounded bg-blue-600 text-white"
                 onClick={async () => {
-                  await saveDiagnosticNote(openDiagFor, diagnosticNotes[openDiagFor] ?? "");
+                  const text = diagnosticNotes[openDiagFor] ?? "";
+                  if (diagBlob) {
+                    const recordedAt = new Date().toISOString();
+                    await saveDiagnosticNote(openDiagFor, text, diagBlob, recordedAt, diagDuration ?? undefined);
+                  } else {
+                    await saveDiagnosticNote(openDiagFor, text);
+                  }
                   setOpenDiagFor(null);
+                  setDiagBlob(null);
+                  setDiagUrl(null);
+                  setDiagDuration(null);
                 }}
               >
                 Guardar diagnóstico
@@ -1429,31 +1618,157 @@ export default function BedSwapBoard() {
           <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
             <h3 className="font-bold mb-2">Procedimientos</h3>
             <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-              {(procList[openProcFor] ?? []).map((proc) => (
-                <div key={proc.id} className="p-2 border rounded">
-                  <div className="text-xs text-gray-500">{new Date(proc.created_at).toLocaleString()}</div>
-                  <div className="mt-1">{proc.descripcion}</div>
-                </div>
-              ))}
+              {(procList[openProcFor] ?? []).map((proc) => {
+                const isEditing = editingProcId === proc.id;
+                return (
+                  <div key={proc.id} className="p-2 border rounded">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="text-xs text-gray-500">{new Date(proc.created_at).toLocaleString()}</div>
+                      {/* small id badge */}
+                      <div className="text-xs text-gray-400">#{proc.id}</div>
+                    </div>
+
+                    {/* content or edit input */}
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        className="w-full mt-2 p-2 border rounded"
+                        value={editProcDesc[proc.id] ?? ""}
+                        onChange={(e) => setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))}
+                      />
+                    ) : (
+                      <div className="mt-2">{proc.descripcion}</div>
+                    )}
+
+                    {/* audio preview (if any) */}
+                    {proc.audio_url ? (
+                      <div className="mt-2">
+                        <audio controls src={proc.audio_url} className="w-full" />
+                        <div className="text-xs text-gray-400">Audio adjunto</div>
+                      </div>
+                    ) : null}
+
+                    {/* action buttons directly under the content */}
+                    <div className="mt-2 flex gap-2">
+                      {isEditing ? (
+                        <>
+                          <button
+                            className="px-3 py-1 rounded bg-blue-600 text-white"
+                            onClick={async () => await saveProcedureEdit(proc.id, openProcFor!)}
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            className="px-3 py-1 rounded bg-gray-200"
+                            onClick={() => {
+                              setEditingProcId(null);
+                              setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
+                            }}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            className="px-3 py-1 rounded bg-red-600 text-white"
+                            onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
+                          >
+                            Eliminar
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
+                            onClick={() => {
+                              setEditingProcId(proc.id);
+                              setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
+                            }}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="px-3 py-1 rounded bg-red-600 text-white"
+                            onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
+                          >
+                            Eliminar
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex flex-col gap-2">
               <input
-                className="flex-1 p-2 border rounded"
-                placeholder="Agregar nuevo procedimiento..."
+                className="w-full p-2 border rounded"
+                placeholder="Agregar nuevo procedimiento (texto)..."
                 value={procInput}
                 onChange={(e) => setProcInput(e.target.value)}
               />
-              <button
-                className="px-3 py-1 rounded bg-green-600 text-white"
-                onClick={async () => {
-                  if (openProcFor) await addProcedure(openProcFor);
-                }}
-              >
-                Guardar procedimiento
-              </button>
-            </div>
-            <div className="flex justify-end gap-2 mt-3">
-              <button className="px-3 py-1 rounded bg-gray-200" onClick={() => setOpenProcFor(null)}>Cerrar</button>
+
+              {/* Recording UI para procedimientos */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={`px-3 py-1 rounded ${procRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
+                  onClick={async () => {
+                    if (!procRecording) {
+                      try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        const mr = new MediaRecorder(stream);
+                        procRecorderRef.current = mr;
+                        procChunksRef.current = [];
+                        procStartRef.current = Date.now();
+                        mr.ondataavailable = (ev) => procChunksRef.current.push(ev.data);
+                        mr.onstop = () => {
+                          const blob = new Blob(procChunksRef.current, { type: "audio/webm" });
+                          setProcBlobRecorded(blob);
+                          const url = URL.createObjectURL(blob);
+                          setProcUrlRecorded(url);
+                          const dur = procStartRef.current ? Math.round((Date.now() - procStartRef.current) / 1000) : null;
+                          setProcDurationRecorded(dur);
+                        };
+                        mr.start();
+                        setProcRecording(true);
+                      } catch (err) {
+                        console.error("No se pudo acceder al micrófono:", err);
+                      }
+                    } else {
+                      procRecorderRef.current?.stop();
+                      procRecorderRef.current = null;
+                      setProcRecording(false);
+                    }
+                  }}
+                >
+                  {procRecording ? "Detener" : "Grabar audio"}
+                </button>
+                {procUrlRecorded ? <audio controls src={procUrlRecorded} className="w-48" /> : null}
+                {procDurationRecorded ? <div className="text-xs text-gray-500">Duración: {Math.floor(procDurationRecorded / 60)}:{String(procDurationRecorded % 60).padStart(2, '0')}</div> : null}
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-1 rounded bg-green-600 text-white"
+                  onClick={async () => {
+                    if (openProcFor) await addProcedure(openProcFor);
+                  }}
+                >
+                  Guardar procedimiento
+                </button>
+                <button
+                  className="px-3 py-1 rounded bg-gray-200"
+                  onClick={() => {
+                    setProcInput("");
+                    setProcAudio(null);
+                    setProcBlobRecorded(null);
+                    setProcUrlRecorded(null);
+                    setProcDurationRecorded(null);
+                    setProcRecording(false);
+                  }}
+                >
+                  Limpiar
+                </button>
+              </div>
             </div>
           </div>
         </div>
