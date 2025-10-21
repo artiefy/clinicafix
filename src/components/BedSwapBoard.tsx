@@ -111,6 +111,62 @@ export default function BedSwapBoard() {
   const [diagUrl, setDiagUrl] = useState<string | null>(null);
   const [diagDuration, setDiagDuration] = useState<number | null>(null);
   const diagStartRef = useRef<number | null>(null);
+
+  // Nuevo: estado y helper para modal de perfil del paciente (corrige errores "openProfile" no definido)
+  const [openProfileFor, setOpenProfileFor] = useState<number | null>(null);
+  const [profilePatient, setProfilePatient] = useState<Patient | null>(null);
+
+  // Nuevo: edición de perfil
+  const [profileForm, setProfileForm] = useState<{
+    name?: string;
+    city?: string | null;
+    phone?: string | null;
+    blood_type?: string | null;
+    birth_date?: string | null;
+    extra_comment?: string | null;
+  }>({});
+
+  const openProfile = useCallback(
+    async (patientId: number) => {
+      // intentar resolver desde cache local primero
+      const local = patients.find((p) => p.id === patientId) ?? null;
+      setProfilePatient(local);
+      setOpenProfileFor(patientId);
+      // si no está en cache o quieres datos frescos, pedir al backend
+      if (!local) {
+        try {
+          const res = await fetch(`/api/patients/${patientId}`);
+          if (res.ok) {
+            const data = (await res.json()) as Patient;
+            setProfilePatient(data);
+            // inicializar formulario con datos del servidor
+            setProfileForm({
+              name: data.name,
+              city: data.city ?? null,
+              phone: data.phone ?? null,
+              blood_type: data.blood_type ?? null,
+              birth_date: data.birth_date ?? null,
+              extra_comment: data.extra_comment ?? null,
+            });
+          }
+        } catch (err) {
+          console.error("Error cargando perfil de paciente:", err);
+        }
+      } else {
+        // inicializar formulario con cache local
+        setProfileForm({
+          name: local.name,
+          city: local.city ?? null,
+          phone: local.phone ?? null,
+          blood_type: local.blood_type ?? null,
+          birth_date: local.birth_date ?? null,
+          extra_comment: local.extra_comment ?? null,
+        });
+      }
+    },
+    [patients],
+  );
+
   // Guardado al backend (onBlur / modal). Revalida SWR tras guardar.
   const saveDiagnosticNote = useCallback(
     async (patientId: number, text: string, audioBlob?: Blob, recordedAt?: string, durationSeconds?: number) => {
@@ -1204,9 +1260,15 @@ export default function BedSwapBoard() {
                   <div
                     key={p.id}
                     data-draggable-patient={String(p.id)}
-                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu will-change-transform"
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu"
                   >
-                    <div className="font-bold">{p.name}</div>
+                    <button
+                      type="button"
+                      className="font-bold text-left w-full text-inherit hover:underline"
+                      onClick={() => openProfile(p.id)}
+                    >
+                      {p.name}
+                    </button>
                     <div className="text-xs">Hora De Ingreso: {p.estimated_time ? to12Hour(p.estimated_time) : "—"}</div>
                   </div>
                 ))
@@ -1286,7 +1348,13 @@ export default function BedSwapBoard() {
                       {assigned ? (
                         // Quitar data-draggable-patient de la mini-tarjeta interna
                         <div className="mt-2 bg-white/5 p-2 rounded">
-                          <div className="font-medium">{assigned.name}</div>
+                          <button
+                            type="button"
+                            className="font-medium text-left w-full text-inherit hover:underline"
+                            onClick={() => openProfile(assigned.id)}
+                          >
+                            {assigned.name}
+                          </button>
                           <div className="text-xs">Diagnóstico / Proced.: {getPatientDiagnostics(assigned)}</div>
                         </div>
                       ) : (
@@ -1323,7 +1391,13 @@ export default function BedSwapBoard() {
                     {assigned ? (
                       // Reemplazamos textarea por botones que abren modales
                       <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
-                        <div className="font-medium mb-1">{assigned.name}</div>
+                        <button
+                          type="button"
+                          className="font-medium mb-1 text-left w-full text-inherit hover:underline"
+                          onClick={() => openProfile(assigned.id)}
+                        >
+                          {assigned.name}
+                        </button>
 
                         {/* stacked buttons to avoid overflow */}
                         <div className="flex flex-col gap-2">
@@ -1384,7 +1458,13 @@ export default function BedSwapBoard() {
                     {assigned ? (
                       // show name + stacked action buttons (diagnostic / procedures)
                       <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
-                        <div className="font-medium mb-1">{assigned.name}</div>
+                        <button
+                          type="button"
+                          className="font-medium mb-1 text-left w-full text-inherit hover:underline"
+                          onClick={() => openProfile(assigned.id)}
+                        >
+                          {assigned.name}
+                        </button>
                         <div className="flex flex-col gap-2">
                           <button
                             type="button"
@@ -1425,7 +1505,13 @@ export default function BedSwapBoard() {
               ) : null}
               {dischargedPatients.map((p: Patient & { discharge_time?: string | null }) => (
                 <div key={p.id} className="mb-2 bg-white/20 rounded shadow p-2">
-                  <div className="font-bold">{p.name}</div>
+                  <button
+                    type="button"
+                    className="font-bold text-left w-full text-inherit hover:underline"
+                    onClick={() => openProfile(p.id)}
+                  >
+                    {p.name}
+                  </button>
                   <div className="text-xs">Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}</div>
                   {/* actions + history view */}
                   <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
@@ -1769,6 +1855,111 @@ export default function BedSwapBoard() {
                   Limpiar
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Patient profile modal */}
+      {openProfileFor !== null && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
+          <div className="relative bg-white text-black rounded p-4 w-full max-w-md z-70">
+            <h3 className="font-bold mb-2">Ficha del paciente</h3>
+            <div className="space-y-2 text-sm">
+              <div>
+                <label className="block text-xs">Nombre</label>
+                <input
+                  className="w-full p-1 border rounded"
+                  value={profileForm.name ?? profilePatient?.name ?? ""}
+                  onChange={(e) => setProfileForm((s) => ({ ...s, name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs">Fecha de Nacimiento</label>
+                <input
+                  type="date"
+                  className="w-full p-1 border rounded"
+                  value={profileForm.birth_date ?? ""}
+                  onChange={(e) => setProfileForm((s) => ({ ...s, birth_date: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs">Ciudad</label>
+                <input
+                  className="w-full p-1 border rounded"
+                  value={profileForm.city ?? ""}
+                  onChange={(e) => setProfileForm((s) => ({ ...s, city: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs">Celular</label>
+                <input
+                  className="w-full p-1 border rounded"
+                  value={profileForm.phone ?? ""}
+                  onChange={(e) => setProfileForm((s) => ({ ...s, phone: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs">Tipo de sangre</label>
+                <input
+                  className="w-full p-1 border rounded"
+                  value={profileForm.blood_type ?? ""}
+                  onChange={(e) => setProfileForm((s) => ({ ...s, blood_type: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs">Comentario extra</label>
+                <textarea
+                  className="w-full p-1 border rounded"
+                  value={profileForm.extra_comment ?? ""}
+                  onChange={(e) => setProfileForm((s) => ({ ...s, extra_comment: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                className="px-3 py-1 rounded bg-gray-200"
+                onClick={() => {
+                  setOpenProfileFor(null);
+                }}
+              >
+                Cerrar
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-blue-600 text-white"
+                onClick={async () => {
+                  if (!openProfileFor) return;
+                  // construir body con sólo campos permitidos
+                  const body: Record<string, unknown> = {};
+                  if (typeof profileForm.name === "string") body.name = profileForm.name;
+                  if (typeof profileForm.city === "string") body.city = profileForm.city;
+                  if (typeof profileForm.phone === "string") body.phone = profileForm.phone;
+                  if (typeof profileForm.blood_type === "string") body.blood_type = profileForm.blood_type;
+                  if (typeof profileForm.birth_date === "string") body.birth_date = profileForm.birth_date; // string ISO YYYY-MM-DD
+                  if (typeof profileForm.extra_comment === "string") body.extra_comment = profileForm.extra_comment;
+                  try {
+                    const res = await fetch(`/api/patients/${openProfileFor}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(body),
+                    });
+                    if (res.ok) {
+                      // actualizar cache y UI
+                      void mutate("/api/patients");
+                      // refrescar profilePatient con los cambios locales
+                      setProfilePatient((prev) => ({ ...(prev ?? {}), ...(body as Partial<Patient>) } as Patient));
+                      setOpenProfileFor(null);
+                    } else {
+                      console.error("PUT paciente falló:", await res.text());
+                    }
+                  } catch (err) {
+                    console.error("Error guardando perfil:", err);
+                  }
+                }}
+              >
+                Guardar
+              </button>
             </div>
           </div>
         </div>

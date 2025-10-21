@@ -47,6 +47,13 @@ export interface Patient {
   diagnostic_audio_url?: string | null;
   diagnostic_audio_recorded_at?: Date | string | null;
   diagnostic_audio_duration_seconds?: number | null;
+
+  // nuevos datos personales
+  city?: string | null;
+  phone?: string | null;
+  blood_type?: string | null;
+  birth_date?: string | null; // ISO date string (YYYY-MM-DD)
+  extra_comment?: string | null;
 }
 
 // Nuevo: audios de diagnóstico (tabla independiente)

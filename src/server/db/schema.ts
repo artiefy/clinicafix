@@ -39,6 +39,12 @@ export const patients = createTable(
     diagnosticos_procedimientos: d.text(),
     discharge_status: d.varchar({ length: 32 }).notNull(),
     estimated_time: d.time(),
+    // nuevos campos personales
+    city: d.varchar({ length: 128 }),
+    phone: d.varchar({ length: 32 }),
+    blood_type: d.varchar({ length: 8 }),
+    birth_date: d.date(),
+    extra_comment: d.text(),
   }),
   (t) => [index("patients_discharge_status_idx").on(t.discharge_status)]
 );
