@@ -112,6 +112,11 @@ export default function BedSwapBoard() {
   const [diagDuration, setDiagDuration] = useState<number | null>(null);
   const diagStartRef = useRef<number | null>(null);
 
+  // UI: estados de "saving" para modales (diagnóstico / procedimientos)
+  const [diagSaving, setDiagSaving] = useState(false);
+  const [procAddingSaving, setProcAddingSaving] = useState(false);
+  const [procEditingSaving, setProcEditingSaving] = useState<Record<number, boolean>>({});
+
   // Nuevo: estado y helper para modal de perfil del paciente (corrige errores "openProfile" no definido)
   const [openProfileFor, setOpenProfileFor] = useState<number | null>(null);
   const [profilePatient, setProfilePatient] = useState<Patient | null>(null);
@@ -189,6 +194,21 @@ export default function BedSwapBoard() {
             body: JSON.stringify({ diagnosticos_procedimientos: text }),
           });
         }
+        // Registrar entrada en patient_history con la fecha/hora actual
+        try {
+          await fetch("/api/patient_history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              patient_id: patientId,
+              tipo: audioBlob ? "audio" : "texto",
+              contenido: (text ?? (audioBlob ? "audio attached" : "")).slice(0, 2000),
+              fecha: new Date().toISOString(),
+            }),
+          });
+        } catch (historyErr) {
+          console.warn("No se pudo registrar patient_history:", historyErr);
+        }
         void mutate("/api/patients");
       } catch (err) {
         console.error("Error guardando nota diagnóstica:", err);
@@ -216,6 +236,7 @@ export default function BedSwapBoard() {
         id: Date.now(),
         patient_id: patientId,
         descripcion: procInput.trim() || "(audio)",
+        // created_at inicial optimista; si el backend devuelve el objeto, se reemplazará
         created_at: new Date().toISOString(),
         audio_url: procUrlRecorded ?? (procAudio ? URL.createObjectURL(procAudio) : undefined),
       };
@@ -271,6 +292,12 @@ export default function BedSwapBoard() {
               ...prev,
               [patientId]: (prev[patientId] ?? []).map((p) => (p.id === temp.id ? createdProc : p)),
             }));
+          } else {
+            // si backend respondió OK pero no devolvió JSON con objeto creado, actualizar timestamp local al completar
+            setProcList((prev) => ({
+              ...prev,
+              [patientId]: (prev[patientId] ?? []).map((p) => (p.id === temp.id ? { ...p, created_at: new Date().toISOString() } : p)),
+            }));
           }
         } else {
           // fallback: recargar la lista si algo falló en el POST (intentar una sola vez)
@@ -296,10 +323,29 @@ export default function BedSwapBoard() {
       });
       if (!res.ok) throw new Error("Error actualizando procedimiento");
       // optimistic local update (no GET adicional)
+      // update description and refresh timestamp locally so UI shows current time (12h format via to12HourWithDate)
+      const nowIso = new Date().toISOString();
       setProcList((prev) => ({
         ...prev,
-        [patientId]: (prev[patientId] ?? []).map((p) => (p.id === procId ? { ...p, descripcion: newText } : p)),
+        [patientId]: (prev[patientId] ?? []).map((p) =>
+          p.id === procId ? { ...p, descripcion: newText, created_at: nowIso } : p
+        ),
       }));
+      // Registrar la edición en patient_history con la fecha/hora actual
+      try {
+        await fetch("/api/patient_history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patient_id: patientId,
+            tipo: "texto",
+            contenido: `Procedimiento #${procId} editado: ${newText}`.slice(0, 2000),
+            fecha: new Date().toISOString(),
+          }),
+        });
+      } catch (historyErr) {
+        console.warn("No se pudo registrar patient_history tras editar procedimiento:", historyErr);
+      }
       setEditingProcId(null);
     } catch (err) {
       console.error("Error guardando procedimiento:", err);
@@ -1611,9 +1657,22 @@ export default function BedSwapBoard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpenDiagFor(null)} />
           <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
+            {/* Close X */}
+            <button
+              type="button"
+              aria-label="Cerrar"
+              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+              onClick={() => setOpenDiagFor(null)}
+            >
+              ×
+            </button>
             <h3 className="font-bold mb-2">Editar diagnóstico</h3>
             <div className="text-xs text-gray-600 mb-2">
-              Ahora: {to12HourWithDate(new Date())}
+              {diagSaving ? (
+                <>Guardando: {to12HourWithDate(new Date())}</>
+              ) : (
+                <>Ahora: {to12HourWithDate(new Date())}</>
+              )}
             </div>
             <textarea
               className="w-full min-h-[120px] p-2 border rounded"
@@ -1668,29 +1727,51 @@ export default function BedSwapBoard() {
             </div>
 
             <div className="flex justify-end gap-2 mt-3">
-              <button className="px-3 py-1 rounded bg-gray-200" onClick={() => {
-                setOpenDiagFor(null);
-                setDiagBlob(null);
-                setDiagUrl(null);
-                setDiagDuration(null);
-              }}>Cancelar</button>
               <button
-                className="px-3 py-1 rounded bg-blue-600 text-white"
-                onClick={async () => {
-                  const text = diagnosticNotes[openDiagFor] ?? "";
-                  if (diagBlob) {
-                    const recordedAt = new Date().toISOString();
-                    await saveDiagnosticNote(openDiagFor, text, diagBlob, recordedAt, diagDuration ?? undefined);
-                  } else {
-                    await saveDiagnosticNote(openDiagFor, text);
-                  }
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+                onClick={() => {
                   setOpenDiagFor(null);
                   setDiagBlob(null);
                   setDiagUrl(null);
                   setDiagDuration(null);
                 }}
+                disabled={diagSaving}
               >
-                Guardar diagnóstico
+                Cancelar
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                onClick={async () => {
+                  setDiagSaving(true);
+                  try {
+                    const text = diagnosticNotes[openDiagFor] ?? "";
+                    if (diagBlob) {
+                      const recordedAt = new Date().toISOString();
+                      await saveDiagnosticNote(openDiagFor, text, diagBlob, recordedAt, diagDuration ?? undefined);
+                    } else {
+                      await saveDiagnosticNote(openDiagFor, text);
+                    }
+                    setOpenDiagFor(null);
+                    setDiagBlob(null);
+                    setDiagUrl(null);
+                    setDiagDuration(null);
+                  } finally {
+                    setDiagSaving(false);
+                  }
+                }}
+                disabled={diagSaving}
+              >
+                {diagSaving ? (
+                  <>
+                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                    </svg>
+                    <span>Guardando...</span>
+                  </>
+                ) : (
+                  "Guardar diagnóstico"
+                )}
               </button>
             </div>
           </div>
@@ -1702,14 +1783,24 @@ export default function BedSwapBoard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProcFor(null)} />
           <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
+            {/* Close X */}
+            <button
+              type="button"
+              aria-label="Cerrar"
+              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+              onClick={() => setOpenProcFor(null)}
+            >
+              ×
+            </button>
             <h3 className="font-bold mb-2">Procedimientos</h3>
             <div className="space-y-2 max-h-[40vh] overflow-y-auto">
               {(procList[openProcFor] ?? []).map((proc) => {
                 const isEditing = editingProcId === proc.id;
+                const isSavingThis = Boolean(procEditingSaving[proc.id]);
                 return (
                   <div key={proc.id} className="p-2 border rounded">
                     <div className="flex justify-between items-start gap-2">
-                      <div className="text-xs text-gray-500">{new Date(proc.created_at).toLocaleString()}</div>
+                      <div className="text-xs text-gray-500">{to12HourWithDate(proc.created_at)}</div>
                       {/* small id badge */}
                       <div className="text-xs text-gray-400">#{proc.id}</div>
                     </div>
@@ -1739,10 +1830,28 @@ export default function BedSwapBoard() {
                       {isEditing ? (
                         <>
                           <button
-                            className="px-3 py-1 rounded bg-blue-600 text-white"
-                            onClick={async () => await saveProcedureEdit(proc.id, openProcFor!)}
+                            className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
+                            onClick={async () => {
+                              setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: true }));
+                              try {
+                                await saveProcedureEdit(proc.id, openProcFor!);
+                              } finally {
+                                setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: false }));
+                              }
+                            }}
+                            disabled={isSavingThis}
                           >
-                            Guardar
+                            {isSavingThis ? (
+                              <>
+                                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                </svg>
+                                <span>Guardando...</span>
+                              </>
+                            ) : (
+                              "Guardar"
+                            )}
                           </button>
                           <button
                             className="px-3 py-1 rounded bg-gray-200"
@@ -1831,15 +1940,31 @@ export default function BedSwapBoard() {
                 {procUrlRecorded ? <audio controls src={procUrlRecorded} className="w-48" /> : null}
                 {procDurationRecorded ? <div className="text-xs text-gray-500">Duración: {Math.floor(procDurationRecorded / 60)}:{String(procDurationRecorded % 60).padStart(2, '0')}</div> : null}
               </div>
-
               <div className="flex gap-2">
                 <button
-                  className="px-3 py-1 rounded bg-green-600 text-white"
+                  className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
                   onClick={async () => {
-                    if (openProcFor) await addProcedure(openProcFor);
+                    if (!openProcFor) return;
+                    setProcAddingSaving(true);
+                    try {
+                      await addProcedure(openProcFor);
+                    } finally {
+                      setProcAddingSaving(false);
+                    }
                   }}
+                  disabled={procAddingSaving}
                 >
-                  Guardar procedimiento
+                  {procAddingSaving ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                      </svg>
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    "Guardar procedimiento"
+                  )}
                 </button>
                 <button
                   className="px-3 py-1 rounded bg-gray-200"
@@ -1865,6 +1990,15 @@ export default function BedSwapBoard() {
         <div className="fixed inset-0 z-60 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
           <div className="relative bg-white text-black rounded p-4 w-full max-w-md z-70">
+            {/* Close X */}
+            <button
+              type="button"
+              aria-label="Cerrar"
+              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+              onClick={() => setOpenProfileFor(null)}
+            >
+              ×
+            </button>
             <h3 className="font-bold mb-2">Ficha del paciente</h3>
             <div className="space-y-2 text-sm">
               <div>
@@ -1919,7 +2053,7 @@ export default function BedSwapBoard() {
             </div>
             <div className="flex justify-end gap-2 mt-4">
               <button
-                className="px-3 py-1 rounded bg-gray-200"
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
                 onClick={() => {
                   setOpenProfileFor(null);
                 }}
@@ -1927,7 +2061,7 @@ export default function BedSwapBoard() {
                 Cerrar
               </button>
               <button
-                className="px-3 py-1 rounded bg-blue-600 text-white"
+                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
                 onClick={async () => {
                   if (!openProfileFor) return;
                   // construir body con sólo campos permitidos
