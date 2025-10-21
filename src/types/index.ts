@@ -5,8 +5,10 @@ export interface Room {
 
 export type BedStatus =
   | "Disponible"
-  | "Ocupada"
+  | "Atención Médica"
   | "Limpieza"
+  | "Diagnostico y Procedimiento"
+  | "Pre-egreso"
   | "Mantenimiento"
   | "Aislamiento"
   | "Reserva";

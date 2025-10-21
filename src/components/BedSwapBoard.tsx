@@ -82,6 +82,37 @@ export default function BedSwapBoard() {
 
   const [recentDischarge, setRecentDischarge] = useState<RecentDischargeType | null>(null);
 
+  // --- NOTAS: estado local para diagnósticos/procedimientos (textarea en la columna Diagnóstico/Proced.) ---
+  const [diagnosticNotes, setDiagnosticNotes] = useState<Record<number, string>>({});
+
+  // Inicializar/merge desde pacientes al cargar/actualizar
+  useEffect(() => {
+    const map: Record<number, string> = {};
+    (patients ?? []).forEach((p) => {
+      if (getPatientEffectiveStatus(p) === "diagnosticos_procedimientos") {
+        map[p.id] = String(p.diagnosticos_procedimientos ?? "");
+      }
+    });
+    setDiagnosticNotes((prev: Record<number, string>) => ({ ...map, ...prev }));
+  }, [patients]);
+
+  // Guardado al backend (onBlur). Revalida SWR tras guardar.
+  const saveDiagnosticNote = useCallback(
+    async (patientId: number, text: string) => {
+      try {
+        await fetch(`/api/patients/${patientId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ diagnosticos_procedimientos: text }),
+        });
+        void mutate("/api/patients");
+      } catch (err) {
+        console.error("Error guardando nota diagnóstica:", err);
+      }
+    },
+    [mutate],
+  );
+
   // dragging state: { type: 'bed' | 'patient' | null, id?: number }
   const [_dragging, setDragging] = useState<{ type: "bed" | "patient" | null; id?: number }>({ type: null });
 
@@ -196,7 +227,7 @@ export default function BedSwapBoard() {
       setBeds((prev) =>
         sortBeds(
           prev.map((b) => {
-            if (b.id === bedId) return { ...b, status: "Ocupada", last_update: now };
+            if (b.id === bedId) return { ...b, status: "Atención Médica", last_update: now };
             if (prevBedId && b.id === prevBedId) return { ...b, status: "Disponible", last_update: now };
             return b;
           }),
@@ -667,8 +698,23 @@ export default function BedSwapBoard() {
             // 1) Si se suelta SOBRE "Disponible" y la tarjeta viene desde "Ocupada",
             // liberar cama y devolver paciente a admisiones (sin cama).
             if (status === "Disponible" && draggedPatient?.bed_id && originCol === "Ocupada") {
-              // usa la mutación existente que pone paciente sin cama y marca la cama Disponible
-              void updatePatientStatusById(patientId, "sin cama");
+              // Optimistic UI: marcar paciente como sin cama y marcar su cama anterior como Disponible
+              setPatients((prev) => movePatientToFront(prev, patientId, { bed_id: null, discharge_status: "sin cama" }));
+              if (draggedPatient?.bed_id) {
+                const now = new Date();
+                setBeds((prev) => sortBeds(prev.map((b) => (b.id === draggedPatient.bed_id ? { ...b, status: "Disponible", last_update: now } : b))));
+              }
+              // Persistir en backend y revalidar caches
+              void fetch(`/api/patients/${patientId}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "sin cama", bed_id: null }),
+              })
+                .then(() => {
+                  void mutate("/api/patients");
+                  void mutate("/api/beds");
+                })
+                .catch((e) => console.error("PUT sin cama failed:", e));
               setHoverStatus(null);
               setAllowedColumns([]);
               setHighlightBedId(null);
@@ -677,7 +723,13 @@ export default function BedSwapBoard() {
             // 1.b) Si se suelta SOBRE "Ocupada" viniendo desde "diagnosticos_procedimientos",
             // volver a marcar al paciente como 'con cama' (mantener bed_id).
             if (status === "Ocupada" && draggedPatient?.bed_id && originCol === "diagnosticos_procedimientos") {
-              // Backend requiere bed_id al marcar "con cama"; lo enviamos explícito.
+              // Optimistic UI: marcar paciente como con cama y la cama como Atención Médica
+              setPatients((prev) => movePatientToFront(prev, patientId, { discharge_status: "con cama", bed_id: draggedPatient.bed_id }));
+              {
+                const now = new Date();
+                setBeds((prev) => sortBeds(prev.map((b) => (b.id === draggedPatient.bed_id ? { ...b, status: "Atención Médica", last_update: now } : b))));
+              }
+              // Persistir en backend y revalidar caches
               void fetch(`/api/patients/${patientId}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
@@ -687,7 +739,7 @@ export default function BedSwapBoard() {
                   void mutate("/api/patients");
                   void mutate("/api/beds");
                 })
-                .catch((e) => console.error("Error al volver a marcar paciente con cama:", e));
+                .catch((e) => console.error("PUT con cama failed:", e));
               setHoverStatus(null);
               setAllowedColumns([]);
               setHighlightBedId(null);
@@ -705,19 +757,71 @@ export default function BedSwapBoard() {
                 // removed direct admission moves; handled only via Atención Médica -> Disponible
                 // no-op
               } else if (status === "de alta") {
-                void updatePatientStatusById(patientId, "de alta");
+                // Optimistic UI: marcar paciente como de alta y si tenía cama, marcarla Limpieza
+                setPatients((prev) => movePatientToFront(prev, patientId, { discharge_status: "de alta", bed_id: null }));
+                if (draggedPatient?.bed_id) {
+                  const now = new Date();
+                  setBeds((prev) => sortBeds(prev.map((b) => (b.id === draggedPatient.bed_id ? { ...b, status: "Limpieza", last_update: now } : b))));
+                }
+                // Mostrar inmediatamente en la columna "Egreso" la tarjeta dada de alta
+                if (draggedPatient) {
+                  setRecentDischarge({
+                    ...(draggedPatient as Patient),
+                    discharge_time: new Date().toISOString(),
+                    discharge_status: "de alta",
+                    bed_id: null,
+                  });
+                }
+                // Persistir en backend y revalidar caches
+                void fetch(`/api/patients/${patientId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ status: "de alta" }),
+                })
+                  .then(() => {
+                    void mutate("/api/patients");
+                    void mutate("/api/beds");
+                    void mutate("/api/discharges");
+                  })
+                  .catch((e) => console.error("PUT de alta failed:", e));
               } else if (status === "diagnosticos_procedimientos") {
+                // Optimistic UI: marcar paciente localmente como en diagnóstico/procedimiento
+                setPatients((prev) => movePatientToFront(prev, patientId, { discharge_status: "diagnosticos_procedimientos" }));
+                // Si el paciente tiene cama, marcar esa cama localmente para que aparezca en la columna correspondiente
+                if (draggedPatient?.bed_id) {
+                  const now = new Date();
+                  setBeds((prev) =>
+                    sortBeds(prev.map((b) => (b.id === draggedPatient.bed_id ? { ...b, status: "Diagnostico y Procedimiento", last_update: now } : b)))
+                  );
+                }
+                // Persistir en backend y revalidar caches
                 void fetch(`/api/patients/${patientId}`, {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ status: "diagnosticos_procedimientos" }),
-                }).then(() => void mutate("/api/patients")).catch((e) => console.error(e));
+                })
+                  .then(() => {
+                    void mutate("/api/patients");
+                    void mutate("/api/beds");
+                  })
+                  .catch((e) => console.error("PUT diagnosticos_procedimientos failed:", e));
               } else if (status === "pre-egreso") {
+                // Optimistic UI: marcar paciente localmente como pre-egreso
+                setPatients((prev) => movePatientToFront(prev, patientId, { discharge_status: "pre-egreso" }));
+                if (draggedPatient?.bed_id) {
+                  const now = new Date();
+                  setBeds((prev) => sortBeds(prev.map((b) => (b.id === draggedPatient.bed_id ? { ...b, status: "Pre-egreso", last_update: now } : b))));
+                }
                 void fetch(`/api/patients/${patientId}`, {
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ status: "pre-egreso" }),
-                }).then(() => void mutate("/api/patients")).catch((e) => console.error(e));
+                })
+                  .then(() => {
+                    void mutate("/api/patients");
+                    void mutate("/api/beds");
+                  })
+                  .catch((e) => console.error("PUT pre-egreso failed:", e));
               }
             }
           } else if (isBedDragData(source.data)) {
@@ -822,7 +926,12 @@ export default function BedSwapBoard() {
   const statusGroups: Record<string, Bed[]> = {
     Limpieza: [],
     Disponible: [],
-    Ocupada: [],
+    "Atención Médica": [],
+    "Diagnostico y Procedimiento": [],
+    "Pre-egreso": [],
+    Mantenimiento: [],
+    Aislamiento: [],
+    Reserva: [],
   };
   beds.forEach((b: Bed) => {
     if (statusGroups[b.status]) statusGroups[b.status].push(b);
@@ -888,13 +997,13 @@ export default function BedSwapBoard() {
   }
 
   // Mostrar en Diagnóstico / Proced. las camas ocupadas cuyo paciente tiene discharge_status === "diagnosticos_procedimientos"
-  const diagnosticBeds = statusGroups.Ocupada.filter((bed) => {
+  const diagnosticBeds = statusGroups["Diagnostico y Procedimiento"].filter((bed) => {
     const assigned = patients.find((p) => p.bed_id === bed.id);
     return assigned && getPatientEffectiveStatus(assigned) === "diagnosticos_procedimientos";
   });
 
   // Pacientes con egreso (pre-egreso) representados como CAMAS ocupadas para mover la tarjeta completa
-  const preEgresoBeds = statusGroups.Ocupada.filter((bed) => {
+  const preEgresoBeds = statusGroups["Pre-egreso"].filter((bed) => {
     const assigned = patients.find((p) => p.bed_id === bed.id);
     return assigned && getPatientEffectiveStatus(assigned) === "pre-egreso";
   });
@@ -967,7 +1076,7 @@ export default function BedSwapBoard() {
                 return (
                   <div
                     key={bed.id}
-                    data-draggable-bed={bed.status !== "Ocupada" && !hasActivePatient ? String(bed.id) : undefined}
+                    data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient ? String(bed.id) : undefined}
                     data-drop-bed={String(bed.id)}
                     className={`mb-2 rounded shadow p-2 ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.status === "Disponible" ? "bg-green-600/10 border-l-4 border-green-600" : ""}`}
                   >
@@ -991,7 +1100,7 @@ export default function BedSwapBoard() {
                   style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
                 />
               ) : null}
-              {statusGroups.Ocupada
+              {statusGroups["Atención Médica"] // cambiado de Ocupada a Atención Médica
                 .filter((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
                   // Excluir camas donde el paciente esté en "diagnosticos_procedimientos" O "pre-egreso" para evitar duplicación
@@ -1047,9 +1156,18 @@ export default function BedSwapBoard() {
                     <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                     <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
                     {assigned ? (
+                      // tarjeta: título + textarea editable para que el personal agregue procedimientos/diagnóstico
                       <div className="mt-2 bg-white/5 p-2 rounded">
-                        <div className="font-medium">{assigned.name}</div>
-                        <div className="text-xs">Diagnóstico / Proced.: {getPatientDiagnostics(assigned)}</div>
+                        <div className="font-medium mb-1">{assigned.name}</div>
+                        <label htmlFor={`diag-${assigned.id}`} className="sr-only">Notas diagnóstico / procedimiento</label>
+                        <textarea
+                          id={`diag-${assigned.id}`}
+                          value={diagnosticNotes[assigned.id] ?? ""}
+                          onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [assigned.id]: e.target.value }))}
+                          onBlur={(e) => void saveDiagnosticNote(assigned.id, e.target.value)}
+                          placeholder="Anotar diagnóstico y procedimientos realizados..."
+                          className="w-full min-h-[64px] text-sm p-2 rounded bg-white/10 placeholder-gray-300 resize-vertical"
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -1140,7 +1258,7 @@ export default function BedSwapBoard() {
                 return (
                   <div
                     key={bed.id}
-                    data-draggable-bed={bed.status !== "Ocupada" && !hasActivePatient ? String(bed.id) : undefined}
+                    data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient ? String(bed.id) : undefined}
                     data-drop-bed={String(bed.id)}
                     className={`mb-2 rounded shadow p-2 bg-yellow-500/10 border-l-4 border-yellow-500 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""}`}
                   >

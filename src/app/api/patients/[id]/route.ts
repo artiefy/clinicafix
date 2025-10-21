@@ -38,19 +38,22 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
     const prevBedId = existingPatient.bed_id ?? null;
 
-    const freeBed = async (bedId: number | null) => {
+    // Helper: liberar una cama indicando el estado destino (por ejemplo "Disponible" o "Limpieza")
+    const freeBed = async (bedId: number | null, targetStatus = "Disponible") => {
       if (!bedId) return;
-      // marcar disponible y actualizar last_update
-      await db.update(beds).set({ status: "Disponible", last_update: new Date() }).where(eq(beds.id, bedId));
+      // marcar estado (Disponible o Limpieza) y actualizar last_update
+      await db.update(beds).set({ status: targetStatus, last_update: new Date() }).where(eq(beds.id, bedId));
     };
 
     const occupyBed = async (bedId: number) => {
-      await db.update(beds).set({ status: "Ocupada", last_update: new Date() }).where(eq(beds.id, bedId));
+      await db.update(beds).set({ status: "Atención Médica", last_update: new Date() }).where(eq(beds.id, bedId));
     };
 
     if (status === "de alta") {
+      // marcar paciente como dado de alta y desasignar cama
       await db.update(patients).set({ discharge_status: "de alta", bed_id: null }).where(eq(patients.id, patientId));
-      if (prevBedId) await freeBed(prevBedId);
+      // cuando un paciente egresa, la cama debe ir a LIMPIEZA, no a Disponible
+      if (prevBedId) await freeBed(prevBedId, "Limpieza");
 
       // record discharge row if previous bed exists (discharges.bed_id is NOT NULL in schema)
       if (prevBedId) {
@@ -70,8 +73,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     }
 
     if (status === "sin cama") {
+      // desasignación normal → la cama queda Disponible
       await db.update(patients).set({ discharge_status: "sin cama", bed_id: null }).where(eq(patients.id, patientId));
-      if (prevBedId) await freeBed(prevBedId);
+      if (prevBedId) await freeBed(prevBedId, "Disponible");
       return NextResponse.json({ message: "Paciente marcado como sin cama" });
     }
 
@@ -88,16 +92,20 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     // NEW: handle diagnosticos_procedimientos and pre-egreso statuses
     if (status === "diagnosticos_procedimientos") {
       // marcar paciente en diagnóstico/procedimiento pero mantener la cama asignada
-      await db.update(patients)
-        .set({ discharge_status: "diagnosticos_procedimientos" })
-        .where(eq(patients.id, patientId));
-      // la cama sigue ocupada
+      await db.update(patients).set({ discharge_status: "diagnosticos_procedimientos" }).where(eq(patients.id, patientId));
+      // marcar la cama para que el frontend la muestre en la columna Diagnóstico/Proced.
+      if (prevBedId) {
+        await db.update(beds).set({ status: "Diagnostico y Procedimiento", last_update: new Date() }).where(eq(beds.id, prevBedId));
+      }
       return NextResponse.json({ message: "Paciente marcado en diagnóstico/procedimiento (cama sigue ocupada)" });
     }
 
     if (status === "pre-egreso") {
       // mark as pre-egreso (keep bed assigned)
       await db.update(patients).set({ discharge_status: "pre-egreso" }).where(eq(patients.id, patientId));
+      if (prevBedId) {
+        await db.update(beds).set({ status: "Pre-egreso", last_update: new Date() }).where(eq(beds.id, prevBedId));
+      }
       return NextResponse.json({ message: "Paciente marcado como pre-egreso" });
     }
 
