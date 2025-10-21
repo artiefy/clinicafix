@@ -1863,7 +1863,7 @@ export default function BedSwapBoard() {
                             Cancelar
                           </button>
                           <button
-                            className="px-3 py-1 rounded bg-red-600 text-white"
+                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
                             onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
                           >
                             Eliminar
@@ -1881,7 +1881,7 @@ export default function BedSwapBoard() {
                             Editar
                           </button>
                           <button
-                            className="px-3 py-1 rounded bg-red-600 text-white"
+                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
                             onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
                           >
                             Eliminar
