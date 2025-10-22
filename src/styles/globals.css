@@ -29,6 +29,48 @@
   }
 }
 
+/* --- NEW: palette variables + global background --- */
+:root {
+  --main-1: #00515e;
+  --main-2: #01aeae;
+  --main-3: #00646d;
+  --panel-bg-10: rgba(1, 174, 174, 0.08); /* para bg-white/10 override */
+  --panel-bg-20: rgba(1, 174, 174, 0.12); /* para bg-white/20 override */
+  --panel-bg-5: rgba(1, 174, 174, 0.04); /* para bg-white/5 override */
+}
+
+/* Aplicar gradiente global utilizando la paleta nueva */
+html,
+body {
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    var(--main-1) 0%,
+    var(--main-2) 50%,
+    var(--main-3) 100%
+  );
+  background-attachment: fixed;
+}
+
+/* Sobrescribir utilidades que se usaban para "paneles" en el proyecto
+   para que las columnas/paneles usen la paleta nueva.
+   IMPORTANTE: dejamos intactos los colores de estado (bg-green-600, bg-red-600, etc.)
+*/
+.bg-white\/10 {
+  background-color: var(--panel-bg-10) !important;
+}
+.bg-white\/20 {
+  background-color: var(--panel-bg-20) !important;
+}
+.bg-white\/5 {
+  background-color: var(--panel-bg-5) !important;
+}
+
+/* También asegurar que algunos paneles con opacity/rounded etc. se mantengan legibles */
+.text-white {
+  color: #ffffff !important;
+}
+
 /* --- NEW: estilos para preview flotante y original atenuado --- */
 .drag-preview {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -48,4 +90,117 @@
     opacity 120ms ease,
     transform 120ms ease;
   pointer-events: none;
+}
+
+/* Opciones coloreadas por valor (cuando el navegador permite estilado de <option>) */
+select option[value="Limpieza"] {
+  background-color: #16a34a !important; /* green-600 */
+  color: #ffffff !important;
+}
+select option[value="Limpieza"]:hover,
+select option[value="Limpieza"]:active,
+select option[value="Limpieza"]:focus {
+  background-color: #16a34a !important;
+  color: #ffffff !important;
+}
+select option[value="Mantenimiento"] {
+  background-color: #2563eb !important; /* blue-600 */
+  color: #ffffff !important;
+}
+select option[value="Mantenimiento"]:hover,
+select option[value="Mantenimiento"]:active,
+select option[value="Mantenimiento"]:focus {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+select option[value="Aislamiento"] {
+  background-color: #dc2626 !important; /* red-600 */
+  color: #ffffff !important;
+}
+select option[value="Aislamiento"]:hover,
+select option[value="Aislamiento"]:active,
+select option[value="Aislamiento"]:focus {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+select option[value="Reserva"] {
+  background-color: #ac1f89 !important; /* Reserva fixed */
+  color: #ffffff !important;
+}
+select option[value="Reserva"]:hover,
+select option[value="Reserva"]:active,
+select option[value="Reserva"]:focus {
+  background-color: #ac1f89 !important;
+  color: #ffffff !important;
+}
+
+/* Evitar que navegadores muestren highlight / outline azul en foco/hover */
+.custom-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1rem;
+  padding-right: 2.25rem; /* espacio para la flecha */
+
+  /* usar variable CSS para fijar color desde React: --select-bg */
+  background-color: var(--select-bg, transparent) !important;
+  color: inherit !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  border-color: transparent !important;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+/* Forzar que al hover/focus el select no cambie a azul ni a otro color distinto */
+.custom-select:hover,
+.custom-select:focus,
+.custom-select:active,
+.custom-select:focus-visible {
+  background-color: var(--select-bg, transparent) !important;
+  color: inherit !important;
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  border-color: transparent !important;
+  outline-color: transparent !important;
+}
+
+/* Refuerzos adicionales para elementos <select> (navegadores que no respetan la clase) */
+select.custom-select,
+select.custom-select:focus,
+select.custom-select:focus-visible,
+select.custom-select:active {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  border-color: transparent !important;
+  background-color: var(--select-bg, transparent) !important;
+}
+
+/* Remove inner focus in Firefox */
+.custom-select::-moz-focus-inner {
+  border: 0 !important;
+}
+
+/* Hide native expand control where possible */
+select::-ms-expand {
+  display: none;
+}
+
+/* En Chrome/Safari algunas reglas sobre options se ignoran; reforzamos lo que podamos */
+select,
+.custom-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+/* Flecha SVG en color blanco (se posiciona a la derecha). */
+.custom-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='%23ffffff' d='M5.25 7.5 10 12.25 14.75 7.5 16 8.75 10 14.75 4 8.75z'/%3E%3C/svg%3E");
 }

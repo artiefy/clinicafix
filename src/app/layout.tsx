@@ -26,7 +26,10 @@ export default function RootLayout({
     <html lang="es" className={`${geist.variable}`}>
       <body>
         {/* Header global */}
-        <header className="w-full bg-[#2e026d] text-white py-4 px-8 flex items-center justify-between shadow">
+        <header
+          className="w-full text-white py-4 px-8 flex items-center justify-between shadow"
+          style={{ background: "linear-gradient(90deg, var(--main-1), var(--main-2))" }}
+        >
           <h1 className="text-2xl font-bold">SYO - Gestión Inteligente de Egresos</h1>
           <span className="text-sm">Clínica DIME</span>
         </header>

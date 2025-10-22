@@ -7,7 +7,7 @@ import useSWR, { useSWRConfig } from "swr";
 
 import { showToast } from "@/components/toastService";
 import { AuxBedStatus, Bed, Discharge, Patient, Procedure, Room } from "@/types"; // <-- añadí Discharge + Procedure
-import { to12Hour, to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
+import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
 
 function formatDate(date: Date | string | null | undefined) {
   // reutilizamos util consistente que devuelve "YYYY-MM-DD h:mm AM/PM"
@@ -131,12 +131,16 @@ export default function BedSwapBoard() {
     extra_comment?: string | null;
   }>({});
 
+  // Nuevo: estado para tab activo en el modal de paciente
+  const [profileTab, setProfileTab] = useState<"perfil" | "diagnostico" | "procedimientos">("perfil");
+
   const openProfile = useCallback(
     async (patientId: number) => {
       // intentar resolver desde cache local primero
       const local = patients.find((p) => p.id === patientId) ?? null;
       setProfilePatient(local);
       setOpenProfileFor(patientId);
+      setProfileTab("perfil");
       // si no está en cache o quieres datos frescos, pedir al backend
       if (!local) {
         try {
@@ -422,8 +426,10 @@ export default function BedSwapBoard() {
     setDischarges(Array.isArray(dischargesData) ? dischargesData : []);
   }, [dischargesData]);
 
-  const getRoomNumber = (room_id: number) =>
-    rooms.find((r) => r.id === room_id)?.number ?? room_id;
+  // replace getRoomNumber helper with stable callback to satisfy hook deps
+  const getRoomNumber = React.useCallback((room_id: number) => {
+    return rooms.find((r) => r.id === room_id)?.number ?? room_id;
+  }, [rooms]);
 
   // Normaliza el estado del paciente (prefiere discharge_status, luego status)
   function getPatientEffectiveStatus(p?: Patient): string {
@@ -449,7 +455,7 @@ export default function BedSwapBoard() {
   }, [patients]);
 
   // Obtener texto combinado de diagnóstico / procedimiento
-  function getPatientDiagnostics(p?: Patient) {
+  function _getPatientDiagnostics(p?: Patient) {
     if (!p) return "—";
     if (p.diagnosticos_procedimientos && String(p.diagnosticos_procedimientos).trim() !== "") {
       return String(p.diagnosticos_procedimientos);
@@ -611,6 +617,12 @@ export default function BedSwapBoard() {
               console.warn("PUT /api/beds failed (mark Limpieza):", err);
             });
             setBeds((prev) => sortBeds(prev.map((b) => (b.id === prevBedId ? { ...b, status: "Limpieza", last_update: now } : b))));
+            // --- NUEVO: mostrar notificación de limpieza automática con nombre del paciente ---
+            showToast({
+              title: `Cama ${prevBedId} — En limpieza`,
+              description: `${current?.name ?? "Paciente"} entró a egreso. La cama quedó en limpieza.`,
+              type: "warning",
+            });
           }
           // Mutación local para mostrar el paciente dado de alta arriba de inmediato
           setRecentDischarge({
@@ -1031,6 +1043,14 @@ export default function BedSwapBoard() {
                 if (draggedPatient?.bed_id) {
                   const now = new Date();
                   setBeds((prev) => sortBeds(prev.map((b) => (b.id === draggedPatient.bed_id ? { ...b, status: "Limpieza", last_update: now } : b))));
+                  // Mostrar notificación de limpieza automática (incluye habitación si la podemos resolver)
+                  const bedObj = beds.find((bb) => bb.id === draggedPatient.bed_id);
+                  const roomNum = bedObj ? getRoomNumber(bedObj.room_id) : "—";
+                  showToast({
+                    title: `Cama ${draggedPatient.bed_id} — En limpieza automática`,
+                    description: `${draggedPatient?.name ?? "Paciente"} entró a egreso. Habitación ${roomNum}.`,
+                    type: "warning",
+                  });
                 }
                 // Mostrar inmediatamente en la columna "Egreso" la tarjeta dada de alta
                 if (draggedPatient) {
@@ -1189,7 +1209,7 @@ export default function BedSwapBoard() {
       setAllowedColumns([]);
       setHighlightBedId(null);
     };
-  }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById, mutate]);
+  }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById, getRoomNumber, mutate]);
 
   // Group beds by status, ordenando cada grupo por last_update descendente
   const statusGroups: Record<string, Bed[]> = {
@@ -1315,7 +1335,10 @@ export default function BedSwapBoard() {
                     >
                       {p.name}
                     </button>
-                    <div className="text-xs">Hora De Ingreso: {p.estimated_time ? to12Hour(p.estimated_time) : "—"}</div>
+                    {/* Mostrar fecha y hora completa de ingreso si existe */}
+                    <div className="text-xs">
+                      Fecha y hora de ingreso: {p.estimated_time ? to12HourWithDate(p.estimated_time) : "—"}
+                    </div>
                   </div>
                 ))
               )}
@@ -1392,7 +1415,6 @@ export default function BedSwapBoard() {
                       <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                       <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
                       {assigned ? (
-                        // Quitar data-draggable-patient de la mini-tarjeta interna
                         <div className="mt-2 bg-white/5 p-2 rounded">
                           <button
                             type="button"
@@ -1401,7 +1423,6 @@ export default function BedSwapBoard() {
                           >
                             {assigned.name}
                           </button>
-                          {/* eliminado: no mostrar diagnóstico/procedimiento aquí */}
                         </div>
                       ) : (
                         <div className="mt-2 text-sm text-gray-300">Sin paciente</div>
@@ -1435,7 +1456,6 @@ export default function BedSwapBoard() {
                     <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                     <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
                     {assigned ? (
-                      // Reemplazamos textarea por botones que abren modales
                       <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
                         <button
                           type="button"
@@ -1444,30 +1464,6 @@ export default function BedSwapBoard() {
                         >
                           {assigned.name}
                         </button>
-
-                        {/* stacked buttons to avoid overflow */}
-                        <div className="flex flex-col gap-2">
-                          <button
-                            type="button"
-                            className="w-full px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm text-center"
-                            onClick={() => {
-                              setOpenDiagFor(assigned.id);
-                            }}
-                          >
-                            Ver diagnóstico
-                          </button>
-
-                          <button
-                            type="button"
-                            className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm text-center"
-                            onClick={() => {
-                              setOpenProcFor(assigned.id);
-                              void loadProcedures(assigned.id);
-                            }}
-                          >
-                            Ver procedimientos
-                          </button>
-                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1502,7 +1498,6 @@ export default function BedSwapBoard() {
                     <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                     <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
                     {assigned ? (
-                      // show name + stacked action buttons (diagnostic / procedures)
                       <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
                         <button
                           type="button"
@@ -1511,25 +1506,6 @@ export default function BedSwapBoard() {
                         >
                           {assigned.name}
                         </button>
-                        <div className="flex flex-col gap-2">
-                          <button
-                            type="button"
-                            className="w-full px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm text-center"
-                            onClick={() => setOpenDiagFor(assigned.id)}
-                          >
-                            Ver diagnóstico
-                          </button>
-                          <button
-                            type="button"
-                            className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm text-center"
-                            onClick={() => {
-                              setOpenProcFor(assigned.id);
-                              void loadProcedures(assigned.id);
-                            }}
-                          >
-                            Ver procedimientos
-                          </button>
-                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -1562,23 +1538,7 @@ export default function BedSwapBoard() {
                   {/* actions + history view */}
                   <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
                     <div className="flex flex-col gap-2">
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm text-center"
-                        onClick={() => setOpenDiagFor(p.id)}
-                      >
-                        Ver diagnóstico
-                      </button>
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm text-center"
-                        onClick={() => {
-                          setOpenProcFor(p.id);
-                          void loadProcedures(p.id);
-                        }}
-                      >
-                        Ver procedimientos
-                      </button>
+                      {/* Eliminar los botones de diagnóstico/procedimientos aquí */}
                     </div>
                   </div>
                 </div>
@@ -1588,6 +1548,7 @@ export default function BedSwapBoard() {
 
           {/* Columna final: Limpieza */}
           <div
+
             className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("Limpieza") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
             data-drop-column="Limpieza"
           >
@@ -1604,6 +1565,8 @@ export default function BedSwapBoard() {
                 const assigned = patients.find((p) => p.bed_id === bed.id);
                 const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
                 const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                // compute CSS variable object without using `any`
+                const selectStyle = ({ ['--select-bg']: auxStatusColor(bed.aux_status ?? "Limpieza") } as unknown) as React.CSSProperties;
                 return (
                   <div
                     key={bed.id}
@@ -1634,7 +1597,9 @@ export default function BedSwapBoard() {
                             console.error("Error actualizando aux_status:", err);
                           }
                         }}
-                        className={`w-full rounded p-1 ${auxStatusClass(bed.aux_status ?? "Limpieza")}`}
+                        /* appearance-none + focus utilities to remove native blue halo; auxStatusClass still provides color classes */
+                        className={`w-full rounded p-1 custom-select appearance-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${auxStatusClass(bed.aux_status ?? "Limpieza")}`}
+                        style={selectStyle}
                       >
                         <option value="Limpieza">Limpieza</option>
                         <option value="Mantenimiento">Mantenimiento</option>
@@ -1863,7 +1828,7 @@ export default function BedSwapBoard() {
                             Cancelar
                           </button>
                           <button
-                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                            className="px-3 py-1 rounded bg-red-600 text-white"
                             onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
                           >
                             Eliminar
@@ -1881,7 +1846,7 @@ export default function BedSwapBoard() {
                             Editar
                           </button>
                           <button
-                            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                            className="px-3 py-1 rounded bg-red-600 text-white"
                             onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
                           >
                             Eliminar
@@ -1999,102 +1964,420 @@ export default function BedSwapBoard() {
             >
               ×
             </button>
-            <h3 className="font-bold mb-2">Ficha del paciente</h3>
-            <div className="space-y-2 text-sm">
-              <div>
-                <label className="block text-xs">Nombre</label>
-                <input
-                  className="w-full p-1 border rounded"
-                  value={profileForm.name ?? profilePatient?.name ?? ""}
-                  onChange={(e) => setProfileForm((s) => ({ ...s, name: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs">Fecha de Nacimiento</label>
-                <input
-                  type="date"
-                  className="w-full p-1 border rounded"
-                  value={profileForm.birth_date ?? ""}
-                  onChange={(e) => setProfileForm((s) => ({ ...s, birth_date: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs">Ciudad</label>
-                <input
-                  className="w-full p-1 border rounded"
-                  value={profileForm.city ?? ""}
-                  onChange={(e) => setProfileForm((s) => ({ ...s, city: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs">Celular</label>
-                <input
-                  className="w-full p-1 border rounded"
-                  value={profileForm.phone ?? ""}
-                  onChange={(e) => setProfileForm((s) => ({ ...s, phone: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs">Tipo de sangre</label>
-                <input
-                  className="w-full p-1 border rounded"
-                  value={profileForm.blood_type ?? ""}
-                  onChange={(e) => setProfileForm((s) => ({ ...s, blood_type: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="block text-xs">Comentario extra</label>
-                <textarea
-                  className="w-full p-1 border rounded"
-                  value={profileForm.extra_comment ?? ""}
-                  onChange={(e) => setProfileForm((s) => ({ ...s, extra_comment: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
+            {/* Menú de tabs */}
+            <div className="flex gap-2 mb-4">
               <button
-                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+                className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                onClick={() => setProfileTab("perfil")}
+              >
+                Perfil paciente
+              </button>
+              <button
+                className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-200"}`}
+                onClick={() => setProfileTab("diagnostico")}
+              >
+                Diagnóstico
+              </button>
+              <button
+                className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
                 onClick={() => {
-                  setOpenProfileFor(null);
+                  setProfileTab("procedimientos");
+                  if (openProfileFor) void loadProcedures(openProfileFor);
                 }}
               >
-                Cerrar
-              </button>
-              <button
-                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                onClick={async () => {
-                  if (!openProfileFor) return;
-                  // construir body con sólo campos permitidos
-                  const body: Record<string, unknown> = {};
-                  if (typeof profileForm.name === "string") body.name = profileForm.name;
-                  if (typeof profileForm.city === "string") body.city = profileForm.city;
-                  if (typeof profileForm.phone === "string") body.phone = profileForm.phone;
-                  if (typeof profileForm.blood_type === "string") body.blood_type = profileForm.blood_type;
-                  if (typeof profileForm.birth_date === "string") body.birth_date = profileForm.birth_date; // string ISO YYYY-MM-DD
-                  if (typeof profileForm.extra_comment === "string") body.extra_comment = profileForm.extra_comment;
-                  try {
-                    const res = await fetch(`/api/patients/${openProfileFor}`, {
-                      method: "PUT",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(body),
-                    });
-                    if (res.ok) {
-                      // actualizar cache y UI
-                      void mutate("/api/patients");
-                      // refrescar profilePatient con los cambios locales
-                      setProfilePatient((prev) => ({ ...(prev ?? {}), ...(body as Partial<Patient>) } as Patient));
-                      setOpenProfileFor(null);
-                    } else {
-                      console.error("PUT paciente falló:", await res.text());
-                    }
-                  } catch (err) {
-                    console.error("Error guardando perfil:", err);
-                  }
-                }}
-              >
-                Guardar
+                Procedimientos
               </button>
             </div>
+            {/* Contenido según tab */}
+            {profileTab === "perfil" && (
+              <div>
+                <h3 className="font-bold mb-2">Ficha del paciente</h3>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <label className="block text-xs">Nombre</label>
+                    <input
+                      className="w-full p-1 border rounded"
+                      value={profileForm.name ?? profilePatient?.name ?? ""}
+                      onChange={(e) => setProfileForm((s) => ({ ...s, name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs">Fecha de Nacimiento</label>
+                    <input
+                      type="date"
+                      className="w-full p-1 border rounded"
+                      value={profileForm.birth_date ?? ""}
+                      onChange={(e) => setProfileForm((s) => ({ ...s, birth_date: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs">Ciudad</label>
+                    <input
+                      className="w-full p-1 border rounded"
+                      value={profileForm.city ?? ""}
+                      onChange={(e) => setProfileForm((s) => ({ ...s, city: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs">Celular</label>
+                    <input
+                      className="w-full p-1 border rounded"
+                      value={profileForm.phone ?? ""}
+                      onChange={(e) => setProfileForm((s) => ({ ...s, phone: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs">Tipo de sangre</label>
+                    <input
+                      className="w-full p-1 border rounded"
+                      value={profileForm.blood_type ?? ""}
+                      onChange={(e) => setProfileForm((s) => ({ ...s, blood_type: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs">Comentario extra</label>
+                    <textarea
+                      className="w-full p-1 border rounded"
+                      value={profileForm.extra_comment ?? ""}
+                      onChange={(e) => setProfileForm((s) => ({ ...s, extra_comment: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+                    onClick={() => {
+                      setOpenProfileFor(null);
+                    }}
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    onClick={async () => {
+                      if (!openProfileFor) return;
+                      // construir body con sólo campos permitidos
+                      const body: Record<string, unknown> = {};
+                      if (typeof profileForm.name === "string") body.name = profileForm.name;
+                      if (typeof profileForm.city === "string") body.city = profileForm.city;
+                      if (typeof profileForm.phone === "string") body.phone = profileForm.phone;
+                      if (typeof profileForm.blood_type === "string") body.blood_type = profileForm.blood_type;
+                      if (typeof profileForm.birth_date === "string") body.birth_date = profileForm.birth_date; // string ISO YYYY-MM-DD
+                      if (typeof profileForm.extra_comment === "string") body.extra_comment = profileForm.extra_comment;
+                      try {
+                        const res = await fetch(`/api/patients/${openProfileFor}`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(body),
+                        });
+                        if (res.ok) {
+                          void mutate("/api/patients");
+                          setProfilePatient((prev) => ({ ...(prev ?? {}), ...(body as Partial<Patient>) } as Patient));
+                          setOpenProfileFor(null);
+                        } else {
+                          console.error("PUT paciente falló:", await res.text());
+                        }
+                      } catch (err) {
+                        console.error("Error guardando perfil:", err);
+                      }
+                    }}
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            )}
+            {profileTab === "diagnostico" && (
+              <div>
+                <h3 className="font-bold mb-2">Diagnóstico</h3>
+                <div className="text-xs text-gray-600 mb-2">
+                  {diagSaving ? (
+                    <>Guardando: {to12HourWithDate(new Date())}</>
+                  ) : (
+                    <>Ahora: {to12HourWithDate(new Date())}</>
+                  )}
+                </div>
+                <textarea
+                  className="w-full min-h-[120px] p-2 border rounded"
+                  value={diagnosticNotes[openProfileFor ?? 0] ?? ""}
+                  onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [openProfileFor ?? 0]: e.target.value }))}
+                />
+                {/* Recording UI para diagnóstico */}
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className={`px-3 py-1 rounded ${diagRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
+                      onClick={async () => {
+                        if (!diagRecording) {
+                          try {
+                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            const mr = new MediaRecorder(stream);
+                            diagRecorderRef.current = mr;
+                            diagChunksRef.current = [];
+                            diagStartRef.current = Date.now();
+                            mr.ondataavailable = (ev) => diagChunksRef.current.push(ev.data);
+                            mr.onstop = () => {
+                              const blob = new Blob(diagChunksRef.current, { type: "audio/webm" });
+                              setDiagBlob(blob);
+                              const url = URL.createObjectURL(blob);
+                              setDiagUrl(url);
+                              const dur = diagStartRef.current ? Math.round((Date.now() - diagStartRef.current) / 1000) : null;
+                              setDiagDuration(dur);
+                            };
+                            mr.start();
+                            setDiagRecording(true);
+                          } catch (err) {
+                            console.error("No se pudo acceder al micrófono:", err);
+                          }
+                        } else {
+                          diagRecorderRef.current?.stop();
+                          diagRecorderRef.current = null;
+                          setDiagRecording(false);
+                        }
+                      }}
+                    >
+                      {diagRecording ? "Detener" : "Grabar audio"}
+                    </button>
+                    {diagUrl ? (
+                      <audio controls src={diagUrl} className="w-48" />
+                    ) : null}
+                    {diagDuration ? <div className="text-xs text-gray-500">Duración: {Math.floor(diagDuration / 60)}:{String(diagDuration % 60).padStart(2, '0')}</div> : null}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 mt-3">
+                  <button
+                    className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+                    onClick={() => {
+                      setDiagBlob(null);
+                      setDiagUrl(null);
+                      setDiagDuration(null);
+                    }}
+                    disabled={diagSaving}
+                  >
+                    Limpiar
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                    onClick={async () => {
+                      setDiagSaving(true);
+                      try {
+                        const text = diagnosticNotes[openProfileFor ?? 0] ?? "";
+                        if (diagBlob) {
+                          const recordedAt = new Date().toISOString();
+                          await saveDiagnosticNote(openProfileFor ?? 0, text, diagBlob, recordedAt, diagDuration ?? undefined);
+                        } else {
+                          await saveDiagnosticNote(openProfileFor ?? 0, text);
+                        }
+                        setDiagBlob(null);
+                        setDiagUrl(null);
+                        setDiagDuration(null);
+                      } finally {
+                        setDiagSaving(false);
+                      }
+                    }}
+                    disabled={diagSaving}
+                  >
+                    {diagSaving ? (
+                      <>
+                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        <span>Guardando...</span>
+                      </>
+                    ) : (
+                      "Guardar diagnóstico"
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+            {profileTab === "procedimientos" && (
+              <div>
+                <h3 className="font-bold mb-2">Procedimientos</h3>
+                <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                  {(procList[openProfileFor ?? 0] ?? []).map((proc) => {
+                    const isEditing = editingProcId === proc.id;
+                    const isSavingThis = Boolean(procEditingSaving[proc.id]);
+                    return (
+                      <div key={proc.id} className="p-2 border rounded">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="text-xs text-gray-500">{to12HourWithDate(proc.created_at)}</div>
+                          <div className="text-xs text-gray-400">#{proc.id}</div>
+                        </div>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            className="w-full mt-2 p-2 border rounded"
+                            value={editProcDesc[proc.id] ?? ""}
+                            onChange={(e) => setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))}
+                          />
+                        ) : (
+                          <div className="mt-2">{proc.descripcion}</div>
+                        )}
+                        {proc.audio_url ? (
+                          <div className="mt-2">
+                            <audio controls src={proc.audio_url} className="w-full" />
+                            <div className="text-xs text-gray-400">Audio adjunto</div>
+                          </div>
+                        ) : null}
+                        <div className="mt-2 flex gap-2">
+                          {isEditing ? (
+                            <>
+                              <button
+                                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
+                                onClick={async () => {
+                                  setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: true }));
+                                  try {
+                                    await saveProcedureEdit(proc.id, openProfileFor ?? 0);
+                                  } finally {
+                                    setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: false }));
+                                  }
+                                }}
+                                disabled={isSavingThis}
+                              >
+                                {isSavingThis ? (
+                                  <>
+                                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                                    </svg>
+                                    <span>Guardando...</span>
+                                  </>
+                                ) : (
+                                  "Guardar"
+                                )}
+                              </button>
+                              <button
+                                className="px-3 py-1 rounded bg-gray-200"
+                                onClick={() => {
+                                  setEditingProcId(null);
+                                  setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
+                                }}
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                className="px-3 py-1 rounded bg-red-600 text-white"
+                                onClick={async () => await deleteProcedure(proc.id, openProfileFor ?? 0)}
+                              >
+                                Eliminar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
+                                onClick={() => {
+                                  setEditingProcId(proc.id);
+                                  setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
+                                }}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                className="px-3 py-1 rounded bg-red-600 text-white"
+                                onClick={async () => await deleteProcedure(proc.id, openProfileFor ?? 0)}
+                              >
+                                Eliminar
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex flex-col gap-2">
+                  <input
+                    className="w-full p-2 border rounded"
+                    placeholder="Agregar nuevo procedimiento (texto)..."
+                    value={procInput}
+                    onChange={(e) => setProcInput(e.target.value)}
+                  />
+                  {/* Recording UI para procedimientos */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className={`px-3 py-1 rounded ${procRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
+                      onClick={async () => {
+                        if (!procRecording) {
+                          try {
+                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                            const mr = new MediaRecorder(stream);
+                            procRecorderRef.current = mr;
+                            procChunksRef.current = [];
+                            procStartRef.current = Date.now();
+                            mr.ondataavailable = (ev) => procChunksRef.current.push(ev.data);
+                            mr.onstop = () => {
+                              const blob = new Blob(procChunksRef.current, { type: "audio/webm" });
+                              setProcBlobRecorded(blob);
+                              const url = URL.createObjectURL(blob);
+                              setProcUrlRecorded(url);
+                              const dur = procStartRef.current ? Math.round((Date.now() - procStartRef.current) / 1000) : null;
+                              setProcDurationRecorded(dur);
+                            };
+                            mr.start();
+                            setProcRecording(true);
+                          } catch (err) {
+                            console.error("No se pudo acceder al micrófono:", err);
+                          }
+                        } else {
+                          procRecorderRef.current?.stop();
+                          procRecorderRef.current = null;
+                          setProcRecording(false);
+                        }
+                      }}
+                    >
+                      {procRecording ? "Detener" : "Grabar audio"}
+                    </button>
+                    {procUrlRecorded ? <audio controls src={procUrlRecorded} className="w-48" /> : null}
+                    {procDurationRecorded ? <div className="text-xs text-gray-500">Duración: {Math.floor(procDurationRecorded / 60)}:{String(procDurationRecorded % 60).padStart(2, '0')}</div> : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                      onClick={async () => {
+                        if (!openProfileFor) return;
+                        setProcAddingSaving(true);
+                        try {
+                          await addProcedure(openProfileFor);
+                        } finally {
+                          setProcAddingSaving(false);
+                        }
+                      }}
+                      disabled={procAddingSaving}
+                    >
+                      {procAddingSaving ? (
+                        <>
+                          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                          </svg>
+                          <span>Guardando...</span>
+                        </>
+                      ) : (
+                        "Guardar procedimiento"
+                      )}
+                    </button>
+                    <button
+                      className="px-3 py-1 rounded bg-gray-200"
+                      onClick={() => {
+                        setProcInput("");
+                        setProcAudio(null);
+                        setProcBlobRecorded(null);
+                        setProcUrlRecorded(null);
+                        setProcDurationRecorded(null);
+                        setProcRecording(false);
+                      }}
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2112,8 +2395,24 @@ function auxStatusClass(s?: AuxBedStatus | null) {
     case "Aislamiento":
       return "bg-red-600 text-white";
     case "Reserva":
-      return "bg-purple-600 text-white";
+      return "bg-orange-600 text-white";
     default:
       return "bg-white/10 text-white";
+  }
+}
+
+// Nuevo helper: color hex para aplicar como --select-bg
+function auxStatusColor(s?: AuxBedStatus | null) {
+  switch (s) {
+    case "Limpieza":
+      return "#16a34a"; // green-600
+    case "Mantenimiento":
+      return "#2563eb"; // blue-600
+    case "Aislamiento":
+      return "#dc2626"; // red-600
+    case "Reserva":
+      return "#ac1f89"; // same as globals.css for Reserva
+    default:
+      return "#111827"; // gray-900 fallback
   }
 }
