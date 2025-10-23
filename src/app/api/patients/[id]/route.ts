@@ -9,7 +9,8 @@ import { Patient } from "@/types";
 
 export async function GET(_request: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const id = Number(params.id);
+    const awaitedParams = await Promise.resolve(params);
+    const id = Number(awaitedParams.id);
     if (!Number.isFinite(id)) return NextResponse.json({ error: "ID inválido" }, { status: 400 });
     const rows = await db.select().from(patients).where(eq(patients.id, id));
     const p = rows[0] as Patient | undefined;
@@ -107,7 +108,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       if (prevBedId) {
         await db.update(beds).set({ status: "Diagnostico y Procedimiento", last_update: new Date() }).where(eq(beds.id, prevBedId));
       }
-      return NextResponse.json({ message: "Paciente marcado en diagnóstico/procedimiento (cama sigue ocupada)" });
+      return NextResponse.json({ message: "Paciente marcado in diagnóstico/procedimiento (cama sigue ocupada)" });
     }
 
     if (status === "pre-egreso") {

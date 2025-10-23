@@ -151,3 +151,17 @@ export const procedure_audios = createTable(
   }),
   (t) => [index("procedure_audios_procedure_idx").on(t.procedure_id), index("procedure_audios_patient_idx").on(t.patient_id)]
 );
+
+// Nuevo: tabla para pre-egresos (registros de pre-egreso por paciente)
+export const pre_egresos = createTable(
+  "pre_egresos",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    patient_id: d.integer().notNull().references(() => patients.id),
+    contenido: d.text().notNull(),
+    saved_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    // opcional: referencia a usuario/autor si se requiere en el futuro
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("pre_egresos_patient_idx").on(t.patient_id)]
+);

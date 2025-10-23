@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { RiCloseCircleLine } from "react-icons/ri";
 import useSWR, { useSWRConfig } from "swr";
 
 import { showToast } from "@/components/toastService";
@@ -96,13 +97,13 @@ export default function BedSwapBoard() {
   const [editingProcId, setEditingProcId] = useState<number | null>(null);
   const [editProcDesc, setEditProcDesc] = useState<Record<number, string>>({});
   // Recording state for procedures (in-modal recorder)
-  const [procRecording, setProcRecording] = useState<boolean>(false);
-  const procRecorderRef = useRef<MediaRecorder | null>(null);
-  const procChunksRef = useRef<BlobPart[]>([]);
+  const [_procRecording, _setProcRecording] = useState<boolean>(false);
+  const _procRecorderRef = useRef<MediaRecorder | null>(null);
+  const _procChunksRef = useRef<BlobPart[]>([]);
   const [procBlobRecorded, setProcBlobRecorded] = useState<Blob | null>(null);
   const [procUrlRecorded, setProcUrlRecorded] = useState<string | null>(null);
   const [procDurationRecorded, setProcDurationRecorded] = useState<number | null>(null);
-  const procStartRef = useRef<number | null>(null);
+  const _procStartRef = useRef<number | null>(null);
   // Recording state for DIAGNÓSTICO (fueron los identificadores que faltaban)
   const [diagRecording, setDiagRecording] = useState<boolean>(false);
   const diagRecorderRef = useRef<MediaRecorder | null>(null);
@@ -112,9 +113,19 @@ export default function BedSwapBoard() {
   const [diagDuration, setDiagDuration] = useState<number | null>(null);
   const diagStartRef = useRef<number | null>(null);
 
+  // --- NEW: Recording & state for PRE-EGRESO (mirrors diagnóstico) ---
+  const [preEgresoNotes, setPreEgresoNotes] = useState<Record<number, string>>({});
+  const [preEgresoRecording, setPreEgresoRecording] = useState<boolean>(false);
+  const preEgresoRecorderRef = useRef<MediaRecorder | null>(null);
+  const preEgresoChunksRef = useRef<BlobPart[]>([]);
+  const [preEgresoBlob, setPreEgresoBlob] = useState<Blob | null>(null);
+  const [preEgresoUrl, setPreEgresoUrl] = useState<string | null>(null);
+  const [preEgresoDuration, setPreEgresoDuration] = useState<number | null>(null);
+  const preEgresoStartRef = useRef<number | null>(null);
+  const [preEgresoSaving, setPreEgresoSaving] = useState(false);
+
   // UI: estados de "saving" para modales (diagnóstico / procedimientos)
   const [diagSaving, setDiagSaving] = useState(false);
-  const [procAddingSaving, setProcAddingSaving] = useState(false);
   const [procEditingSaving, setProcEditingSaving] = useState<Record<number, boolean>>({});
 
   // Nuevo: estado y helper para modal de perfil del paciente (corrige errores "openProfile" no definido)
@@ -132,7 +143,7 @@ export default function BedSwapBoard() {
   }>({});
 
   // Nuevo: estado para tab activo en el modal de paciente
-  const [profileTab, setProfileTab] = useState<"perfil" | "diagnostico" | "procedimientos">("perfil");
+  const [profileTab, setProfileTab] = useState<"perfil" | "diagnostico" | "procedimientos" | "pre-egreso">("perfil");
 
   const openProfile = useCallback(
     async (patientId: number) => {
@@ -221,6 +232,49 @@ export default function BedSwapBoard() {
     [mutate],
   );
 
+  // Guardar pre-egreso (texto o audio). Similar a saveDiagnosticNote.
+  const savePreEgreso = useCallback(
+    async (patientId: number, text: string, audioBlob?: Blob, recordedAt?: string, durationSeconds?: number) => {
+      try {
+        if (audioBlob) {
+          const fd = new FormData();
+          fd.append("patient_id", String(patientId));
+          fd.append("contenido", text ?? "");
+          fd.append("file", new File([audioBlob], `preegreso-${Date.now()}.webm`, { type: audioBlob.type || "audio/webm" }));
+          if (recordedAt) fd.append("recorded_at", recordedAt);
+          if (typeof durationSeconds === "number") fd.append("duration_seconds", String(durationSeconds));
+          await fetch("/api/pre_egresos", { method: "POST", body: fd });
+        } else {
+          await fetch("/api/pre_egresos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ patient_id: patientId, contenido: text }),
+          });
+        }
+        // Registrar en patient_history (silencioso)
+        try {
+          await fetch("/api/patient_history", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              patient_id: patientId,
+              tipo: audioBlob ? "audio" : "texto",
+              contenido: (text ?? (audioBlob ? "audio pre-egreso" : "")).slice(0, 2000),
+              fecha: new Date().toISOString(),
+            }),
+          });
+        } catch (_historyErr) {
+          // no bloquear el flujo si falla el historial
+        }
+        void mutate("/api/pre_egresos");
+        void mutate("/api/patients");
+      } catch (err) {
+        console.error("Error guardando pre-egreso:", err);
+      }
+    },
+    [mutate],
+  );
+
   // Cargar procedimientos de un paciente al abrir modal
   const loadProcedures = useCallback(async (patientId: number) => {
     try {
@@ -260,7 +314,7 @@ export default function BedSwapBoard() {
           const fd = new FormData();
           fd.append("patient_id", String(patientId));
           fd.append("descripcion", temp.descripcion);
-          fd.append("file", new File([localRecorded], `procedure-${Date.now()}.webm`, { type: localRecorded.type || "audio/webm" }));
+          fd.append("file", new File([localRecorded], `procedure-${Date.now()}.webm`, { type: (localRecorded as Blob).type || "audio/webm" }));
           if (localRecordedDuration) fd.append("duration_seconds", String(localRecordedDuration));
           res = await fetch("/api/procedures", { method: "POST", body: fd });
         } else if (localFile) {
@@ -319,6 +373,7 @@ export default function BedSwapBoard() {
   const saveProcedureEdit = useCallback(async (procId: number, patientId: number) => {
     const newText = (editProcDesc[procId] ?? "").trim();
     if (!newText) return;
+    setProcEditingSaving((s) => ({ ...(s ?? {}), [procId]: true }));
     try {
       const res = await fetch(`/api/procedures/${procId}`, {
         method: "PUT",
@@ -327,7 +382,6 @@ export default function BedSwapBoard() {
       });
       if (!res.ok) throw new Error("Error actualizando procedimiento");
       // optimistic local update (no GET adicional)
-      // update description and refresh timestamp locally so UI shows current time (12h format via to12HourWithDate)
       const nowIso = new Date().toISOString();
       setProcList((prev) => ({
         ...prev,
@@ -355,21 +409,20 @@ export default function BedSwapBoard() {
       console.error("Error guardando procedimiento:", err);
       // fallback: recargar
       await loadProcedures(patientId);
+    } finally {
+      setProcEditingSaving((s) => ({ ...(s ?? {}), [procId]: false }));
     }
   }, [editProcDesc, loadProcedures]);
-
   // Borrar procedimiento — actualiza localmente para evitar GETs dobles
   const deleteProcedure = useCallback(async (procId: number, patientId: number) => {
     if (!confirm("¿Eliminar este procedimiento? Esta acción no puede deshacerse.")) return;
     try {
       const res = await fetch(`/api/procedures/${procId}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Error eliminando procedimiento");
-      // optimistic local removal
       setProcList((prev) => ({
         ...prev,
         [patientId]: (prev[patientId] ?? []).filter((p) => p.id !== procId),
       }));
-      // limpiar edición si necesaria
       if (editingProcId === procId) setEditingProcId(null);
     } catch (err) {
       console.error("Error eliminando procedimiento:", err);
@@ -1633,112 +1686,30 @@ export default function BedSwapBoard() {
             </button>
             <h3 className="font-bold mb-2">Editar diagnóstico</h3>
             <div className="text-xs text-gray-600 mb-2">
-              {diagSaving ? (
-                <>Guardando: {to12HourWithDate(new Date())}</>
-              ) : (
-                <>Ahora: {to12HourWithDate(new Date())}</>
-              )}
+              {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
             </div>
-            <textarea
-              className="w-full min-h-[120px] p-2 border rounded"
-              value={diagnosticNotes[openDiagFor] ?? ""}
-              onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [openDiagFor]: e.target.value }))}
-            />
-
-            {/* Recording UI para diagnóstico */}
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className={`px-3 py-1 rounded ${diagRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
-                  onClick={async () => {
-                    // start / stop recording
-                    if (!diagRecording) {
-                      try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                        const mr = new MediaRecorder(stream);
-                        diagRecorderRef.current = mr;
-                        diagChunksRef.current = [];
-                        diagStartRef.current = Date.now();
-                        mr.ondataavailable = (ev) => diagChunksRef.current.push(ev.data);
-                        mr.onstop = () => {
-                          const blob = new Blob(diagChunksRef.current, { type: "audio/webm" });
-                          setDiagBlob(blob);
-                          const url = URL.createObjectURL(blob);
-                          setDiagUrl(url);
-                          const dur = diagStartRef.current ? Math.round((Date.now() - diagStartRef.current) / 1000) : null;
-                          setDiagDuration(dur);
-                        };
-                        mr.start();
-                        setDiagRecording(true);
-                      } catch (err) {
-                        console.error("No se pudo acceder al micrófono:", err);
-                      }
-                    } else {
-                      // stop
-                      diagRecorderRef.current?.stop();
-                      diagRecorderRef.current = null;
-                      setDiagRecording(false);
-                    }
-                  }}
-                >
-                  {diagRecording ? "Detener" : "Grabar audio"}
-                </button>
-                {diagUrl ? (
-                  <audio controls src={diagUrl} className="w-48" />
-                ) : null}
-                {diagDuration ? <div className="text-xs text-gray-500">Duración: {Math.floor(diagDuration / 60)}:{String(diagDuration % 60).padStart(2, '0')}</div> : null}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-                onClick={() => {
-                  setOpenDiagFor(null);
-                  setDiagBlob(null);
-                  setDiagUrl(null);
-                  setDiagDuration(null);
-                }}
-                disabled={diagSaving}
-              >
-                Cancelar
-              </button>
-              <button
-                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
-                onClick={async () => {
-                  setDiagSaving(true);
-                  try {
-                    const text = diagnosticNotes[openDiagFor] ?? "";
-                    if (diagBlob) {
-                      const recordedAt = new Date().toISOString();
-                      await saveDiagnosticNote(openDiagFor, text, diagBlob, recordedAt, diagDuration ?? undefined);
-                    } else {
-                      await saveDiagnosticNote(openDiagFor, text);
-                    }
-                    setOpenDiagFor(null);
-                    setDiagBlob(null);
-                    setDiagUrl(null);
-                    setDiagDuration(null);
-                  } finally {
-                    setDiagSaving(false);
-                  }
-                }}
-                disabled={diagSaving}
-              >
-                {diagSaving ? (
-                  <>
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                    <span>Guardando...</span>
-                  </>
-                ) : (
-                  "Guardar diagnóstico"
-                )}
-              </button>
-            </div>
+            {/* Reuse the DiagnosticoEditable component to avoid duplicated state/logic */}
+            {typeof openDiagFor === "number" && (
+              <DiagnosticoEditable
+                patientId={openDiagFor}
+                diagnosticNotes={diagnosticNotes}
+                setDiagnosticNotes={setDiagnosticNotes}
+                diagBlob={diagBlob}
+                setDiagBlob={setDiagBlob}
+                diagUrl={diagUrl}
+                setDiagUrl={setDiagUrl}
+                diagDuration={diagDuration}
+                setDiagDuration={setDiagDuration}
+                diagRecording={diagRecording}
+                setDiagRecording={setDiagRecording}
+                diagRecorderRef={diagRecorderRef}
+                diagChunksRef={diagChunksRef}
+                diagStartRef={diagStartRef}
+                diagSaving={diagSaving}
+                setDiagSaving={setDiagSaving}
+                saveDiagnosticNote={saveDiagnosticNote}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1765,58 +1736,41 @@ export default function BedSwapBoard() {
                 return (
                   <div key={proc.id} className="p-2 border rounded">
                     <div className="flex justify-between items-start gap-2">
-                      <div className="text-xs text-gray-500">{to12HourWithDate(proc.created_at)}</div>
-                      {/* small id badge */}
+                      <div className="text-xs text-gray-500">
+                        {to12HourWithDate(proc.created_at)}
+                      </div>
                       <div className="text-xs text-gray-400">#{proc.id}</div>
                     </div>
-
-                    {/* content or edit input */}
+                    {/* Editar procedimiento: textarea si está editando, texto si no */}
                     {isEditing ? (
-                      <input
-                        type="text"
+                      <textarea
                         className="w-full mt-2 p-2 border rounded"
                         value={editProcDesc[proc.id] ?? ""}
-                        onChange={(e) => setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))}
+                        onChange={(e) =>
+                          setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
+                        }
                       />
                     ) : (
                       <div className="mt-2">{proc.descripcion}</div>
                     )}
-
-                    {/* audio preview (if any) */}
                     {proc.audio_url ? (
                       <div className="mt-2">
                         <audio controls src={proc.audio_url} className="w-full" />
                         <div className="text-xs text-gray-400">Audio adjunto</div>
                       </div>
                     ) : null}
-
-                    {/* action buttons directly under the content */}
                     <div className="mt-2 flex gap-2">
                       {isEditing ? (
                         <>
                           <button
                             className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
                             onClick={async () => {
-                              setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: true }));
-                              try {
-                                await saveProcedureEdit(proc.id, openProcFor!);
-                              } finally {
-                                setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: false }));
-                              }
+                              // delegate to central handler (it toggles saving state)
+                              await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
                             }}
                             disabled={isSavingThis}
                           >
-                            {isSavingThis ? (
-                              <>
-                                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                                </svg>
-                                <span>Guardando...</span>
-                              </>
-                            ) : (
-                              "Guardar"
-                            )}
+                            {isSavingThis ? "Guardando..." : "Guardar"}
                           </button>
                           <button
                             className="px-3 py-1 rounded bg-gray-200"
@@ -1829,7 +1783,9 @@ export default function BedSwapBoard() {
                           </button>
                           <button
                             className="px-3 py-1 rounded bg-red-600 text-white"
-                            onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
+                            onClick={async () => {
+                              await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                            }}
                           >
                             Eliminar
                           </button>
@@ -1847,7 +1803,9 @@ export default function BedSwapBoard() {
                           </button>
                           <button
                             className="px-3 py-1 rounded bg-red-600 text-white"
-                            onClick={async () => await deleteProcedure(proc.id, openProcFor!)}
+                            onClick={async () => {
+                              await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                            }}
                           >
                             Eliminar
                           </button>
@@ -1859,88 +1817,25 @@ export default function BedSwapBoard() {
               })}
             </div>
             <div className="mt-3 flex flex-col gap-2">
-              <input
+              <textarea
                 className="w-full p-2 border rounded"
                 placeholder="Agregar nuevo procedimiento (texto)..."
                 value={procInput}
                 onChange={(e) => setProcInput(e.target.value)}
               />
-
-              {/* Recording UI para procedimientos */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className={`px-3 py-1 rounded ${procRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
-                  onClick={async () => {
-                    if (!procRecording) {
-                      try {
-                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                        const mr = new MediaRecorder(stream);
-                        procRecorderRef.current = mr;
-                        procChunksRef.current = [];
-                        procStartRef.current = Date.now();
-                        mr.ondataavailable = (ev) => procChunksRef.current.push(ev.data);
-                        mr.onstop = () => {
-                          const blob = new Blob(procChunksRef.current, { type: "audio/webm" });
-                          setProcBlobRecorded(blob);
-                          const url = URL.createObjectURL(blob);
-                          setProcUrlRecorded(url);
-                          const dur = procStartRef.current ? Math.round((Date.now() - procStartRef.current) / 1000) : null;
-                          setProcDurationRecorded(dur);
-                        };
-                        mr.start();
-                        setProcRecording(true);
-                      } catch (err) {
-                        console.error("No se pudo acceder al micrófono:", err);
-                      }
-                    } else {
-                      procRecorderRef.current?.stop();
-                      procRecorderRef.current = null;
-                      setProcRecording(false);
-                    }
-                  }}
-                >
-                  {procRecording ? "Detener" : "Grabar audio"}
-                </button>
-                {procUrlRecorded ? <audio controls src={procUrlRecorded} className="w-48" /> : null}
-                {procDurationRecorded ? <div className="text-xs text-gray-500">Duración: {Math.floor(procDurationRecorded / 60)}:{String(procDurationRecorded % 60).padStart(2, '0')}</div> : null}
-              </div>
               <div className="flex gap-2">
                 <button
                   className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
                   onClick={async () => {
-                    if (!openProcFor) return;
-                    setProcAddingSaving(true);
-                    try {
-                      await addProcedure(openProcFor);
-                    } finally {
-                      setProcAddingSaving(false);
-                    }
+                    if (openProcFor) await addProcedure(openProcFor);
                   }}
-                  disabled={procAddingSaving}
+                  disabled={!procInput.trim()}
                 >
-                  {procAddingSaving ? (
-                    <>
-                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                      </svg>
-                      <span>Guardando...</span>
-                    </>
-                  ) : (
-                    "Guardar procedimiento"
-                  )}
+                  Guardar procedimiento
                 </button>
                 <button
                   className="px-3 py-1 rounded bg-gray-200"
-                  onClick={() => {
-                    setProcInput("");
-                    setProcAudio(null);
-                    setProcBlobRecorded(null);
-                    setProcUrlRecorded(null);
-                    setProcDurationRecorded(null);
-                    setProcRecording(false);
-                  }}
+                  onClick={() => setProcInput("")}
                 >
                   Limpiar
                 </button>
@@ -1954,15 +1849,16 @@ export default function BedSwapBoard() {
       {openProfileFor !== null && (
         <div className="fixed inset-0 z-60 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
-          <div className="relative bg-white text-black rounded p-4 w-full max-w-md z-70">
+          <div className="relative bg-white text-black rounded p-4 w-full max-w-2xl z-70">
             {/* Close X */}
             <button
               type="button"
               aria-label="Cerrar"
-              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+              className="absolute top-3 right-3 text-rose-600 hover:text-rose-800 transition-all"
               onClick={() => setOpenProfileFor(null)}
+              style={{ fontSize: "2rem", background: "none", border: "none", padding: 0, lineHeight: 1 }}
             >
-              ×
+              <RiCloseCircleLine size={32} />
             </button>
             {/* Menú de tabs */}
             <div className="flex gap-2 mb-4">
@@ -1986,6 +1882,13 @@ export default function BedSwapBoard() {
                 }}
               >
                 Procedimientos
+              </button>
+              {/* NUEVO: pestaña Pre-egreso */}
+              <button
+                className={`px-6 py-1 rounded font-semibold ${profileTab === "pre-egreso" ? "bg-rose-600 text-white" : "bg-gray-200"}`}
+                onClick={() => setProfileTab("pre-egreso")}
+              >
+                Pre-egreso
               </button>
             </div>
             {/* Contenido según tab */}
@@ -2091,106 +1994,30 @@ export default function BedSwapBoard() {
               <div>
                 <h3 className="font-bold mb-2">Diagnóstico</h3>
                 <div className="text-xs text-gray-600 mb-2">
-                  {diagSaving ? (
-                    <>Guardando: {to12HourWithDate(new Date())}</>
-                  ) : (
-                    <>Ahora: {to12HourWithDate(new Date())}</>
-                  )}
+                  {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
                 </div>
-                <textarea
-                  className="w-full min-h-[120px] p-2 border rounded"
-                  value={diagnosticNotes[openProfileFor ?? 0] ?? ""}
-                  onChange={(e) => setDiagnosticNotes((prev) => ({ ...prev, [openProfileFor ?? 0]: e.target.value }))}
-                />
-                {/* Recording UI para diagnóstico */}
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className={`px-3 py-1 rounded ${diagRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
-                      onClick={async () => {
-                        if (!diagRecording) {
-                          try {
-                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                            const mr = new MediaRecorder(stream);
-                            diagRecorderRef.current = mr;
-                            diagChunksRef.current = [];
-                            diagStartRef.current = Date.now();
-                            mr.ondataavailable = (ev) => diagChunksRef.current.push(ev.data);
-                            mr.onstop = () => {
-                              const blob = new Blob(diagChunksRef.current, { type: "audio/webm" });
-                              setDiagBlob(blob);
-                              const url = URL.createObjectURL(blob);
-                              setDiagUrl(url);
-                              const dur = diagStartRef.current ? Math.round((Date.now() - diagStartRef.current) / 1000) : null;
-                              setDiagDuration(dur);
-                            };
-                            mr.start();
-                            setDiagRecording(true);
-                          } catch (err) {
-                            console.error("No se pudo acceder al micrófono:", err);
-                          }
-                        } else {
-                          diagRecorderRef.current?.stop();
-                          diagRecorderRef.current = null;
-                          setDiagRecording(false);
-                        }
-                      }}
-                    >
-                      {diagRecording ? "Detener" : "Grabar audio"}
-                    </button>
-                    {diagUrl ? (
-                      <audio controls src={diagUrl} className="w-48" />
-                    ) : null}
-                    {diagDuration ? <div className="text-xs text-gray-500">Duración: {Math.floor(diagDuration / 60)}:{String(diagDuration % 60).padStart(2, '0')}</div> : null}
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 mt-3">
-                  <button
-                    className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-                    onClick={() => {
-                      setDiagBlob(null);
-                      setDiagUrl(null);
-                      setDiagDuration(null);
-                    }}
-                    disabled={diagSaving}
-                  >
-                    Limpiar
-                  </button>
-                  <button
-                    className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
-                    onClick={async () => {
-                      setDiagSaving(true);
-                      try {
-                        const text = diagnosticNotes[openProfileFor ?? 0] ?? "";
-                        if (diagBlob) {
-                          const recordedAt = new Date().toISOString();
-                          await saveDiagnosticNote(openProfileFor ?? 0, text, diagBlob, recordedAt, diagDuration ?? undefined);
-                        } else {
-                          await saveDiagnosticNote(openProfileFor ?? 0, text);
-                        }
-                        setDiagBlob(null);
-                        setDiagUrl(null);
-                        setDiagDuration(null);
-                      } finally {
-                        setDiagSaving(false);
-                      }
-                    }}
-                    disabled={diagSaving}
-                  >
-                    {diagSaving ? (
-                      <>
-                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                        </svg>
-                        <span>Guardando...</span>
-                      </>
-                    ) : (
-                      "Guardar diagnóstico"
-                    )}
-                  </button>
-                </div>
+                {/* Estado de edición para diagnóstico */}
+                {typeof openProfileFor === "number" && (
+                  <DiagnosticoEditable
+                    patientId={openProfileFor}
+                    diagnosticNotes={diagnosticNotes}
+                    setDiagnosticNotes={setDiagnosticNotes}
+                    diagBlob={diagBlob}
+                    setDiagBlob={setDiagBlob}
+                    diagUrl={diagUrl}
+                    setDiagUrl={setDiagUrl}
+                    diagDuration={diagDuration}
+                    setDiagDuration={setDiagDuration}
+                    diagRecording={diagRecording}
+                    setDiagRecording={setDiagRecording}
+                    diagRecorderRef={diagRecorderRef}
+                    diagChunksRef={diagChunksRef}
+                    diagStartRef={diagStartRef}
+                    diagSaving={diagSaving}
+                    setDiagSaving={setDiagSaving}
+                    saveDiagnosticNote={saveDiagnosticNote}
+                  />
+                )}
               </div>
             )}
             {profileTab === "procedimientos" && (
@@ -2203,15 +2030,19 @@ export default function BedSwapBoard() {
                     return (
                       <div key={proc.id} className="p-2 border rounded">
                         <div className="flex justify-between items-start gap-2">
-                          <div className="text-xs text-gray-500">{to12HourWithDate(proc.created_at)}</div>
+                          <div className="text-xs text-gray-500">
+                            {to12HourWithDate(proc.created_at)}
+                          </div>
                           <div className="text-xs text-gray-400">#{proc.id}</div>
                         </div>
+                        {/* Editar procedimiento: textarea si está editando, texto si no */}
                         {isEditing ? (
-                          <input
-                            type="text"
+                          <textarea
                             className="w-full mt-2 p-2 border rounded"
                             value={editProcDesc[proc.id] ?? ""}
-                            onChange={(e) => setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))}
+                            onChange={(e) =>
+                              setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
+                            }
                           />
                         ) : (
                           <div className="mt-2">{proc.descripcion}</div>
@@ -2228,26 +2059,11 @@ export default function BedSwapBoard() {
                               <button
                                 className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
                                 onClick={async () => {
-                                  setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: true }));
-                                  try {
-                                    await saveProcedureEdit(proc.id, openProfileFor ?? 0);
-                                  } finally {
-                                    setProcEditingSaving((s) => ({ ...(s ?? {}), [proc.id]: false }));
-                                  }
+                                  await saveProcedureEdit(proc.id, openProfileFor ?? openProcFor ?? 0);
                                 }}
                                 disabled={isSavingThis}
                               >
-                                {isSavingThis ? (
-                                  <>
-                                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                                    </svg>
-                                    <span>Guardando...</span>
-                                  </>
-                                ) : (
-                                  "Guardar"
-                                )}
+                                {isSavingThis ? "Guardando..." : "Guardar"}
                               </button>
                               <button
                                 className="px-3 py-1 rounded bg-gray-200"
@@ -2260,7 +2076,9 @@ export default function BedSwapBoard() {
                               </button>
                               <button
                                 className="px-3 py-1 rounded bg-red-600 text-white"
-                                onClick={async () => await deleteProcedure(proc.id, openProfileFor ?? 0)}
+                                onClick={async () => {
+                                  await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                }}
                               >
                                 Eliminar
                               </button>
@@ -2278,7 +2096,9 @@ export default function BedSwapBoard() {
                               </button>
                               <button
                                 className="px-3 py-1 rounded bg-red-600 text-white"
-                                onClick={async () => await deleteProcedure(proc.id, openProfileFor ?? 0)}
+                                onClick={async () => {
+                                  await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                }}
                               >
                                 Eliminar
                               </button>
@@ -2290,92 +2110,61 @@ export default function BedSwapBoard() {
                   })}
                 </div>
                 <div className="mt-3 flex flex-col gap-2">
-                  <input
+                  <textarea
                     className="w-full p-2 border rounded"
                     placeholder="Agregar nuevo procedimiento (texto)..."
                     value={procInput}
                     onChange={(e) => setProcInput(e.target.value)}
                   />
-                  {/* Recording UI para procedimientos */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      className={`px-3 py-1 rounded ${procRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
-                      onClick={async () => {
-                        if (!procRecording) {
-                          try {
-                            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                            const mr = new MediaRecorder(stream);
-                            procRecorderRef.current = mr;
-                            procChunksRef.current = [];
-                            procStartRef.current = Date.now();
-                            mr.ondataavailable = (ev) => procChunksRef.current.push(ev.data);
-                            mr.onstop = () => {
-                              const blob = new Blob(procChunksRef.current, { type: "audio/webm" });
-                              setProcBlobRecorded(blob);
-                              const url = URL.createObjectURL(blob);
-                              setProcUrlRecorded(url);
-                              const dur = procStartRef.current ? Math.round((Date.now() - procStartRef.current) / 1000) : null;
-                              setProcDurationRecorded(dur);
-                            };
-                            mr.start();
-                            setProcRecording(true);
-                          } catch (err) {
-                            console.error("No se pudo acceder al micrófono:", err);
-                          }
-                        } else {
-                          procRecorderRef.current?.stop();
-                          procRecorderRef.current = null;
-                          setProcRecording(false);
-                        }
-                      }}
-                    >
-                      {procRecording ? "Detener" : "Grabar audio"}
-                    </button>
-                    {procUrlRecorded ? <audio controls src={procUrlRecorded} className="w-48" /> : null}
-                    {procDurationRecorded ? <div className="text-xs text-gray-500">Duración: {Math.floor(procDurationRecorded / 60)}:{String(procDurationRecorded % 60).padStart(2, '0')}</div> : null}
-                  </div>
                   <div className="flex gap-2">
                     <button
                       className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
                       onClick={async () => {
-                        if (!openProfileFor) return;
-                        setProcAddingSaving(true);
-                        try {
-                          await addProcedure(openProfileFor);
-                        } finally {
-                          setProcAddingSaving(false);
-                        }
+                        if (openProfileFor) await addProcedure(openProfileFor);
                       }}
-                      disabled={procAddingSaving}
+                      disabled={!procInput.trim()}
                     >
-                      {procAddingSaving ? (
-                        <>
-                          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                          </svg>
-                          <span>Guardando...</span>
-                        </>
-                      ) : (
-                        "Guardar procedimiento"
-                      )}
+                      Guardar procedimiento
                     </button>
                     <button
                       className="px-3 py-1 rounded bg-gray-200"
-                      onClick={() => {
-                        setProcInput("");
-                        setProcAudio(null);
-                        setProcBlobRecorded(null);
-                        setProcUrlRecorded(null);
-                        setProcDurationRecorded(null);
-                        setProcRecording(false);
-                      }}
+                      onClick={() => setProcInput("")}
                     >
                       Limpiar
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+            {/* NUEVO: pestaña Pre-egreso */}
+            {profileTab === "pre-egreso" && (
+              <div>
+                <h3 className="font-bold mb-2">Pre-egreso</h3>
+                <div className="text-xs text-gray-600 mb-2">
+                  {preEgresoSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
+                </div>
+                {/* Estado de edición para pre-egreso */}
+                {typeof openProfileFor === "number" && (
+                  <PreEgresoEditable
+                    patientId={openProfileFor}
+                    preEgresoNotes={preEgresoNotes}
+                    setPreEgresoNotes={setPreEgresoNotes}
+                    preEgresoBlob={preEgresoBlob}
+                    setPreEgresoBlob={setPreEgresoBlob}
+                    preEgresoUrl={preEgresoUrl}
+                    setPreEgresoUrl={setPreEgresoUrl}
+                    preEgresoDuration={preEgresoDuration}
+                    setPreEgresoDuration={setPreEgresoDuration}
+                    preEgresoRecording={preEgresoRecording}
+                    setPreEgresoRecording={setPreEgresoRecording}
+                    preEgresoRecorderRef={preEgresoRecorderRef}
+                    preEgresoChunksRef={preEgresoChunksRef}
+                    preEgresoStartRef={preEgresoStartRef}
+                    preEgresoSaving={preEgresoSaving}
+                    setPreEgresoSaving={setPreEgresoSaving}
+                    savePreEgreso={savePreEgreso}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -2415,4 +2204,323 @@ function auxStatusColor(s?: AuxBedStatus | null) {
     default:
       return "#111827"; // gray-900 fallback
   }
+}
+
+// Componente editable para Diagnóstico
+function DiagnosticoEditable(props: {
+  patientId: number;
+  diagnosticNotes: Record<number, string>;
+  setDiagnosticNotes: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+  diagBlob: Blob | null;
+  setDiagBlob: (b: Blob | null) => void;
+  diagUrl: string | null;
+  setDiagUrl: (u: string | null) => void;
+  diagDuration: number | null;
+  setDiagDuration: (n: number | null) => void;
+  diagRecording: boolean;
+  setDiagRecording: (v: boolean) => void;
+  diagRecorderRef: React.RefObject<MediaRecorder | null>;
+  diagChunksRef: React.RefObject<BlobPart[]>;
+  diagStartRef: React.RefObject<number | null>;
+  diagSaving: boolean;
+  setDiagSaving: (v: boolean) => void;
+  saveDiagnosticNote: (
+    patientId: number,
+    text: string,
+    audioBlob?: Blob,
+    recordedAt?: string,
+    durationSeconds?: number
+  ) => Promise<void>;
+}) {
+  const { patientId, setDiagnosticNotes } = props;
+  const [isEditing, setIsEditing] = React.useState(true);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function fetchDiagnostic() {
+      const res = await fetch(`/api/patients/${patientId}`);
+      if (!res.ok) return;
+      const data: Partial<Patient> = await res.json();
+      const value = typeof data.diagnosticos_procedimientos === "string" ? data.diagnosticos_procedimientos : "";
+      if (!cancelled) {
+        setDiagnosticNotes((prev) => ({ ...prev, [patientId]: value }));
+        setIsEditing(!(value.trim().length > 0));
+      }
+    }
+    fetchDiagnostic();
+    return () => { cancelled = true; };
+  }, [patientId, setDiagnosticNotes]);
+
+  // Variable local para saber si hay texto guardado
+  const hasSavedText = (props.diagnosticNotes[props.patientId] ?? "").trim().length > 0;
+
+  return (
+    <>
+      <textarea
+        className="w-full min-h-[120px] p-2 border rounded"
+        value={props.diagnosticNotes[props.patientId] ?? ""}
+        onChange={(e) => props.setDiagnosticNotes((prev: Record<number, string>) => ({ ...prev, [props.patientId]: e.target.value }))}
+        disabled={!isEditing || props.diagSaving}
+      />
+      {/* Recording UI para diagnóstico */}
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={`px-3 py-1 rounded ${props.diagRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
+            onClick={async () => {
+              // start / stop recording
+              if (!props.diagRecording) {
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  const mr = new MediaRecorder(stream);
+                  props.diagRecorderRef.current = mr;
+                  props.diagChunksRef.current = [];
+                  props.diagStartRef.current = Date.now();
+                  mr.ondataavailable = (ev) => props.diagChunksRef.current.push(ev.data);
+                  mr.onstop = () => {
+                    const blob = new Blob(props.diagChunksRef.current, { type: "audio/webm" });
+                    props.setDiagBlob(blob);
+                    const url = URL.createObjectURL(blob);
+                    props.setDiagUrl(url);
+                    const dur = props.diagStartRef.current ? Math.round((Date.now() - props.diagStartRef.current) / 1000) : null;
+                    props.setDiagDuration(dur);
+                  };
+                  mr.start();
+                  props.setDiagRecording(true);
+                } catch (err) {
+                  console.error("No se pudo acceder al micrófono:", err);
+                }
+              } else {
+                props.diagRecorderRef.current?.stop();
+                props.diagRecorderRef.current = null;
+                props.setDiagRecording(false);
+              }
+            }}
+            disabled={!isEditing || props.diagSaving}
+          >
+            {props.diagRecording ? "Detener" : "Grabar audio"}
+          </button>
+          {props.diagUrl ? (
+            <audio controls src={props.diagUrl} className="w-48" />
+          ) : null}
+          {props.diagDuration ? <div className="text-xs text-gray-500">Duración: {Math.floor(props.diagDuration / 60)}:{String(props.diagDuration % 60).padStart(2, '0')}</div> : null}
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-3">
+        {!isEditing && hasSavedText ? (
+          <button
+            className="px-3 py-1 rounded bg-yellow-500 text-black hover:bg-yellow-600"
+            onClick={() => setIsEditing(true)}
+          >
+            Editar
+          </button>
+        ) : (
+          <>
+            <button
+              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+              onClick={() => {
+                props.setDiagBlob(null);
+                props.setDiagUrl(null);
+                props.setDiagDuration(null);
+              }}
+              disabled={props.diagSaving}
+            >
+              Limpiar
+            </button>
+            <button
+              className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+              onClick={async () => {
+                props.setDiagSaving(true);
+                try {
+                  const text = props.diagnosticNotes[props.patientId] ?? "";
+                  if (props.diagBlob) {
+                    const recordedAt = new Date().toISOString();
+                    await props.saveDiagnosticNote(props.patientId, text, props.diagBlob, recordedAt, props.diagDuration ?? undefined);
+                  } else {
+                    await props.saveDiagnosticNote(props.patientId, text);
+                  }
+                  props.setDiagBlob(null);
+                  props.setDiagUrl(null);
+                  props.setDiagDuration(null);
+                  // --- CORREGIDO: mantener el texto guardado en el textarea ---
+                  props.setDiagnosticNotes((prev: Record<number, string>) => ({ ...prev, [props.patientId]: text }));
+                  setIsEditing(!(typeof text === "string" && text.trim().length > 0));
+                } finally {
+                  props.setDiagSaving(false);
+                }
+              }}
+              disabled={props.diagSaving}
+            >
+              Guardar diagnóstico
+            </button>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
+// Componente editable para Pre-egreso
+function PreEgresoEditable(props: {
+  patientId: number;
+  preEgresoNotes: Record<number, string>;
+  setPreEgresoNotes: React.Dispatch<React.SetStateAction<Record<number, string>>>;
+  preEgresoBlob: Blob | null;
+  setPreEgresoBlob: (b: Blob | null) => void;
+  preEgresoUrl: string | null;
+  setPreEgresoUrl: (u: string | null) => void;
+  preEgresoDuration: number | null;
+  setPreEgresoDuration: (n: number | null) => void;
+  preEgresoRecording: boolean;
+  setPreEgresoRecording: (v: boolean) => void;
+  preEgresoRecorderRef: React.RefObject<MediaRecorder | null>;
+  preEgresoChunksRef: React.RefObject<BlobPart[]>;
+  preEgresoStartRef: React.RefObject<number | null>;
+  preEgresoSaving: boolean;
+  setPreEgresoSaving: (v: boolean) => void;
+  savePreEgreso: (
+    patientId: number,
+    text: string,
+    audioBlob?: Blob,
+    recordedAt?: string,
+    durationSeconds?: number
+  ) => Promise<void>;
+}) {
+  const { patientId, setPreEgresoNotes } = props;
+  const [isEditing, setIsEditing] = useState(true);
+  React.useEffect(() => {
+    let cancelled = false;
+    async function fetchPreEgreso() {
+      const res = await fetch(`/api/pre_egresos?patientId=${patientId}`);
+      if (!res.ok) return;
+      const data: unknown = await res.json();
+      let last = "";
+      if (Array.isArray(data) && data.length > 0) {
+        const lastItem = data[data.length - 1];
+        // Tipar correctamente el elemento antes de acceder a .contenido
+        if (
+          lastItem &&
+          typeof lastItem === "object" &&
+          "contenido" in lastItem &&
+          typeof (lastItem as { contenido?: unknown }).contenido === "string"
+        ) {
+          last = (lastItem as { contenido: string }).contenido;
+        }
+      }
+      if (!cancelled) {
+        setPreEgresoNotes((prev) => ({ ...prev, [patientId]: last }));
+        setIsEditing(!(last.trim().length > 0));
+      }
+    }
+    fetchPreEgreso();
+    return () => { cancelled = true; };
+  }, [patientId, setPreEgresoNotes]);
+
+  return (
+    <>
+      <textarea
+        className="w-full min-h-[120px] p-2 border rounded"
+        value={props.preEgresoNotes[props.patientId] ?? ""}
+        onChange={(e) => props.setPreEgresoNotes((prev: Record<number, string>) => ({ ...prev, [props.patientId]: e.target.value }))}
+        disabled={!isEditing || props.preEgresoSaving}
+      />
+      {/* Recording UI para pre-egreso */}
+      <div className="mt-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={`px-3 py-1 rounded ${props.preEgresoRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
+            onClick={async () => {
+              if (!isEditing || props.preEgresoSaving) return;
+              if (!props.preEgresoRecording) {
+                try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  const mr = new MediaRecorder(stream);
+                  props.preEgresoRecorderRef.current = mr;
+                  props.preEgresoChunksRef.current = [];
+                  props.preEgresoStartRef.current = Date.now();
+                  mr.ondataavailable = (ev: BlobEvent) => props.preEgresoChunksRef.current.push(ev.data as BlobPart);
+                  mr.onstop = () => {
+                    const blob = new Blob(props.preEgresoChunksRef.current as BlobPart[], { type: "audio/webm" });
+                    props.setPreEgresoBlob(blob);
+                    const url = URL.createObjectURL(blob);
+                    props.setPreEgresoUrl(url);
+                    const dur = props.preEgresoStartRef.current ? Math.round((Date.now() - props.preEgresoStartRef.current) / 1000) : null;
+                    props.setPreEgresoDuration(dur);
+                  };
+                  mr.start();
+                  props.setPreEgresoRecording(true);
+                } catch (err) {
+                  console.error("No se pudo acceder al micrófono:", err);
+                }
+              } else {
+                props.preEgresoRecorderRef.current?.stop();
+                props.preEgresoRecorderRef.current = null;
+                props.setPreEgresoRecording(false);
+              }
+            }}
+            disabled={!isEditing || props.preEgresoSaving}
+          >
+            {props.preEgresoRecording ? "Detener" : "Grabar audio"}
+          </button>
+          {props.preEgresoUrl ? (
+            <audio controls src={props.preEgresoUrl} className="w-48" />
+          ) : null}
+          {props.preEgresoDuration ? <div className="text-xs text-gray-500">Duración: {Math.floor(props.preEgresoDuration / 60)}:{String(props.preEgresoDuration % 60).padStart(2, '0')}</div> : null}
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-3">
+        {!isEditing ? (
+          <button
+            className="px-3 py-1 rounded bg-yellow-500 text-black hover:bg-yellow-600"
+            onClick={() => setIsEditing(true)}
+          >
+            Editar
+          </button>
+        ) : (
+          <>
+            <button
+              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+              onClick={() => {
+                props.setPreEgresoBlob(null);
+                props.setPreEgresoUrl(null);
+                props.setPreEgresoDuration(null);
+              }}
+              disabled={props.preEgresoSaving}
+            >
+              Limpiar
+            </button>
+            <button
+              className="px-3 py-1 rounded bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 min-w-[220px] flex items-center justify-center gap-2"
+              style={{ whiteSpace: "nowrap" }}
+              onClick={async () => {
+                props.setPreEgresoSaving(true);
+                try {
+                  const text = props.preEgresoNotes[props.patientId] ?? "";
+                  if (props.preEgresoBlob) {
+                    const recordedAt = new Date().toISOString();
+                    await props.savePreEgreso(props.patientId, text, props.preEgresoBlob, recordedAt, props.preEgresoDuration ?? undefined);
+                  } else {
+                    await props.savePreEgreso(props.patientId, text);
+                  }
+                  props.setPreEgresoBlob(null);
+                  props.setPreEgresoUrl(null);
+                  props.setPreEgresoDuration(null);
+                  // --- CORREGIDO: mantener el texto guardado en el textarea ---
+                  props.setPreEgresoNotes((prev: Record<number, string>) => ({ ...prev, [props.patientId]: text }));
+                  setIsEditing(!(typeof text === "string" && text.trim().length > 0));
+                } finally {
+                  props.setPreEgresoSaving(false);
+                }
+              }}
+              disabled={props.preEgresoSaving}
+            >
+              Guardar pre-egreso
+            </button>
+          </>
+        )}
+      </div>
+    </>
+  );
 }
