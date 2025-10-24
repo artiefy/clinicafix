@@ -1763,7 +1763,7 @@ export default function BedSwapBoard() {
                       {isEditing ? (
                         <>
                           <button
-                            className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
+                            className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
                             onClick={async () => {
                               // delegate to central handler (it toggles saving state)
                               await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
@@ -1956,7 +1956,7 @@ export default function BedSwapBoard() {
                     Cerrar
                   </button>
                   <button
-                    className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50"
                     onClick={async () => {
                       if (!openProfileFor) return;
                       // construir body con sólo campos permitidos
@@ -2057,9 +2057,10 @@ export default function BedSwapBoard() {
                           {isEditing ? (
                             <>
                               <button
-                                className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
+                                className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
                                 onClick={async () => {
-                                  await saveProcedureEdit(proc.id, openProfileFor ?? openProcFor ?? 0);
+                                  // delegate to central handler (it toggles saving state)
+                                  await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
                                 }}
                                 disabled={isSavingThis}
                               >
@@ -2120,7 +2121,7 @@ export default function BedSwapBoard() {
                     <button
                       className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
                       onClick={async () => {
-                        if (openProfileFor) await addProcedure(openProfileFor);
+                        if (openProcFor) await addProcedure(openProcFor);
                       }}
                       disabled={!procInput.trim()}
                     >
@@ -2329,7 +2330,7 @@ function DiagnosticoEditable(props: {
               Limpiar
             </button>
             <button
-              className="px-3 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+              className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
               onClick={async () => {
                 props.setDiagSaving(true);
                 try {

@@ -31,9 +31,10 @@
 
 /* --- NEW: palette variables + global background --- */
 :root {
-  --main-1: #00515e;
-  --main-2: #01aeae;
-  --main-3: #00646d;
+  /* Palette — tonos más claros para fondo */
+  --main-1: #0a7f7b; /* más claro que el original */
+  --main-2: #28c2bf; /* tono central claro */
+  --main-3: #7fe7e4; /* remate muy suave y luminoso */
   --panel-bg-10: rgba(1, 174, 174, 0.08); /* para bg-white/10 override */
   --panel-bg-20: rgba(1, 174, 174, 0.12); /* para bg-white/20 override */
   --panel-bg-5: rgba(1, 174, 174, 0.04); /* para bg-white/5 override */
@@ -203,4 +204,180 @@ select,
 /* Flecha SVG en color blanco (se posiciona a la derecha). */
 .custom-select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='%23ffffff' d='M5.25 7.5 10 12.25 14.75 7.5 16 8.75 10 14.75 4 8.75z'/%3E%3C/svg%3E");
+}
+
+/* Ocultar avisos de Clerk en UserButton y otros componentes */
+.cl-internal-l2l775,
+.cl-internal-1q4rk2m,
+.cl-internal-fcx671,
+.cl-internal-1axx6jt,
+.cl-internal-1dauvpw,
+.cl-footerPages,
+.cl-footerPagesLink,
+.cl-internal-6685xs,
+.cl-internal-3din4a {
+  display: none !important;
+}
+
+/* Traducciones de mensajes de error de Clerk - Actualizado */
+/* Aplica estilo base al contenedor de error provisto por Clerk */
+[data-error-code] {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 500;
+  color: #dc2626; /* red-600 */
+  display: block;
+  position: relative;
+  min-height: 1rem;
+}
+
+/* Ocultar mensajes originales en inglés y dejar espacio reservado
+   para que no rompa el layout. */
+[data-error-code="form_identifier_not_found"],
+[data-error-code="form_password_incorrect"],
+[data-error-code="form_identifier_exists"],
+[data-error-code="form_param_format_invalid"],
+[data-error-code="form_password_pwned"],
+[data-error-code="form_param_missing"],
+[data-error-code="form_code_incorrect"] {
+  /* esconder el contenido original pero mantener el espacio */
+  font-size: 0;
+  line-height: 0;
+  visibility: hidden;
+  position: relative;
+  height: 1rem; /* mantener espacio para el mensaje traducido */
+  display: block;
+}
+
+/* Traducciones (texto en español mediante pseudo-elemento) */
+[data-error-code="form_identifier_not_found"]::before {
+  content: "No se encontró una cuenta con este correo electrónico";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+[data-error-code="form_password_incorrect"]::before {
+  content: "La contraseña es incorrecta";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+[data-error-code="form_identifier_exists"]::before {
+  content: "Ya existe una cuenta con este correo electrónico";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+[data-error-code="form_param_format_invalid"]::before {
+  content: "El formato del correo electrónico no es válido";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+[data-error-code="form_password_pwned"]::before {
+  content: "Esta contraseña ha sido comprometida, por favor use otra";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+[data-error-code="form_param_missing"]::before {
+  content: "Este campo es obligatorio";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+[data-error-code="form_code_incorrect"]::before {
+  content: "El código ingresado es incorrecto";
+  visibility: visible;
+  position: absolute;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: #dc2626;
+}
+
+/* Forzar fondo transparente al hacer foco en el input de correo (Clerk Input renderiza <input type="email">).
+   Usamos !important para sobreescribir estilos inline/por clase de Clerk si fuera necesario. */
+input[type="email"],
+input[type="email"]:focus,
+input[type="email"]:active,
+input[type="email"]:hover {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Si Clerk añade wrappers con clase específica, también las cubrimos (seguridad adicional) */
+.clerk-input,
+.clerk-input input[type="email"] {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Autofill / autocomplete fixes: forzar fondo transparente y color correcto incluso cuando el navegador rellena */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: inherit !important;
+  transition: background-color 5000s ease-in-out 0s !important; /* workaround para Chrome que resetea bg */
+  background-color: transparent !important;
+  box-shadow: 0 0 0px 1000px transparent inset !important;
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+  outline: none !important;
+}
+
+/* Firefox autofill */
+input:-moz-autofill,
+input:-moz-autofill:hover,
+input:-moz-autofill:focus,
+textarea:-moz-autofill,
+textarea:-moz-autofill:hover,
+textarea:-moz-autofill:focus {
+  background-color: transparent !important;
+  -moz-box-shadow: 0 0 0px 1000px transparent inset !important;
+  box-shadow: 0 0 0px 1000px transparent inset !important;
+  color: inherit !important;
+  outline: none !important;
+}
+
+/* Cobertura adicional para inputs renderizados por Clerk wrappers */
+.clerk-input input,
+.clerk-input input:-webkit-autofill,
+.clerk-input input:-moz-autofill,
+input.clerk-input,
+input.clerk-input:-webkit-autofill,
+input.clerk-input:-moz-autofill {
+  background-color: transparent !important;
+  -webkit-text-fill-color: inherit !important;
+  box-shadow: 0 0 0px 1000px transparent inset !important;
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+}
+
+/* Asegurar que focus no pinte fondo blanco */
+input:focus,
+textarea:focus,
+select:focus,
+.clerk-input:focus,
+.clerk-input input:focus {
+  background-color: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
