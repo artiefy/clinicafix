@@ -60,7 +60,7 @@ export default function EgressTracker() {
       <h3 className="text-xl font-bold mb-4">Salidas De Pacientes</h3>
 
       <div className="overflow-x-auto">
-        <table className="w-full table-fixed text-left text-sm">
+        <table className="w-full table-fixed min-w-[800px] text-left text-sm text-black">
           <colgroup>
             <col style={{ width: "6%" }} />
             <col style={{ width: "30%" }} />

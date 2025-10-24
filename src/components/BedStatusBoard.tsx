@@ -39,10 +39,16 @@ export default function BedStatusBoard() {
   };
 
   return (
-    <section className="rounded-xl p-6 text-white shadow">
+    <section className="rounded-xl p-6 text-black shadow">
       <h3 className="text-xl font-bold mb-4">Estado de Camas</h3>
       <div className="overflow-x-auto rounded">
-        <table className="w-full text-white table-auto">
+        <table className="w-full table-fixed min-w-[600px] text-black">
+          <colgroup>
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "30%" }} />
+            <col style={{ width: "30%" }} />
+          </colgroup>
           <thead className="bg-gray-50/10">
             <tr>
               <th className="px-4 py-3 text-left font-semibold">Cama</th>

@@ -3,11 +3,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
+import { useUser } from "@clerk/nextjs";
 import { RiCloseCircleLine } from "react-icons/ri";
 import useSWR, { useSWRConfig } from "swr";
 
 import { showToast } from "@/components/toastService";
 import { AuxBedStatus, Bed, Discharge, Patient, Procedure, Room } from "@/types"; // <-- añadí Discharge + Procedure
+import { Roles } from "@/types/globals";
 import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
 
 function formatDate(date: Date | string | null | undefined) {
@@ -68,6 +70,16 @@ function isBedDragData(x: unknown): x is BedDragData {
 }
 
 export default function BedSwapBoard() {
+  // --- Clerk: obtener role desde publicMetadata (cliente)
+  const { user } = useUser();
+  const role = (user?.publicMetadata?.role ?? null) as Roles | null;
+  const canViewColumn = (name: string) => {
+    if (role === "doctor_general") return true;
+    if (role === "enfermera_jefe") return name === "Limpieza" || name === "Disponible";
+    // por defecto, ocultar columnas sensibles
+    return false;
+  };
+
   const { mutate } = useSWRConfig();
   const { data: bedsData } = useSWR<Bed[]>("/api/beds");
   const { data: roomsData } = useSWR<Room[]>("/api/rooms");
@@ -1352,35 +1364,247 @@ export default function BedSwapBoard() {
 
   // Render: remove native drag event attributes; add data-attrs for Pragmatic
   return (
-    <div>
+    // forzar texto oscuro en todo el gestor (tableros y tarjetas)
+    <div className="text-black">
       <h3 className="text-2xl text-center font-bold mb-4">Gestión de Pacientes y Camas</h3>
-      <div className="grid grid-cols-1 gap-4 w-full">
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-4 w-full">
-          {/* Admisiones */}
-          <div
-            className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("sin cama") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
-            data-drop-column="sin cama"
-          >
-            <h4 className="font-semibold mb-2 text-center">
-              Admisiones  {unassignedPatients.length}
-            </h4>
-            <div className="flex-1">
-              {/* placeholder para mini-tarjeta: igual que en columna "de alta" */}
-              {hoverStatus === "sin cama" ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
-                />
-              ) : null}
-              {unassignedPatients.length === 0 ? (
-                <div className="text-center text-gray-400">No hay pacientes sin cama</div>
-              ) : (
-                unassignedPatients.map((p) => (
+      <div className="w-full max-w-full">
+        {/* Cambiado: usar flex con overflow-x-auto para móviles, manteniendo grid en desktop */}
+        <div className="md:grid md:grid-cols-7 md:gap-4 md:w-full flex overflow-x-auto gap-4 w-full p-4">
+          {/* Column: Admisiones */}
+          {canViewColumn("sin cama") && (
+            <div
+              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col"
+              data-drop-column="sin cama"
+            >
+              <h4 className="font-semibold mb-2 text-center">
+                Admisiones  {unassignedPatients.length}
+              </h4>
+              <div className="flex-1">
+                {/* placeholder para mini-tarjeta: igual que en columna "de alta" */}
+                {hoverStatus === "sin cama" ? (
                   <div
-                    key={p.id}
-                    data-draggable-patient={String(p.id)}
-                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu"
-                  >
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {unassignedPatients.length === 0 ? (
+                  <div className="text-center text-gray-400">No hay pacientes sin cama</div>
+                ) : (
+                  unassignedPatients.map((p) => (
+                    <div
+                      key={p.id}
+                      data-draggable-patient={String(p.id)}
+                      className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu text-white"
+                    >
+                      <button
+                        type="button"
+                        className="font-bold text-left w-full text-inherit hover:underline"
+                        onClick={() => openProfile(p.id)}
+                      >
+                        {p.name}
+                      </button>
+                      {/* Mostrar fecha y hora completa de ingreso si existe */}
+                      <div className="text-xs">
+                        Fecha y hora de ingreso: {p.estimated_time ? to12HourWithDate(p.estimated_time) : "—"}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+          {/* Column: Camas disponibles */}
+          {canViewColumn("Disponible") && (
+            <div
+              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px]"
+              data-drop-column="Disponible"
+            >
+              <h4 className="font-semibold mb-2 text-center">Camas disponibles</h4>
+              <div className="flex-1">
+                {/* Placeholder de paciente (preview shadow) cuando se arrastra una tarjeta de paciente */}
+                {allowedColumns.includes("Disponible") && hoverStatus === "Disponible" && placeholderHeight ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Disponible (sólo si está permitido) */}
+                {allowedColumns.includes("Disponible") && hoverStatus === "Disponible" && _bedPlaceholder?.status === "Disponible" ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={_bedPlaceholder?.height ? { height: `${_bedPlaceholder.height}px` } : undefined}
+                  />
+                ) : null}
+                {statusGroups.Disponible.map((bed) => {
+                  const assigned = patients.find((p) => p.bed_id === bed.id);
+                  const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  return (
+                    <div
+                      key={bed.id}
+                      data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient ? String(bed.id) : undefined}
+                      data-drop-bed={String(bed.id)}
+                      className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.status === "Disponible" ? "bg-green-600/10 border-l-4 border-green-600" : ""}`}
+                    >
+                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
+                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                      <div className="mt-2 text-sm text-gray-300">{assigned ? assigned.name : "Sin paciente"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Column: Atención médica (camas ocupadas) */}
+          {canViewColumn("Ocupada") && (
+            <div className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="Ocupada">
+              <h4 className="font-semibold mb-2 text-center">Atención Médica</h4>
+              <div className="flex-1">
+                {/* Placeholder de paciente cuando se arrastra una tarjeta (ej. desde Diagnóstico) hacia Atención Médica */}
+                {allowedColumns.includes("Ocupada") && hoverStatus === "Ocupada" && placeholderHeight ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {statusGroups["Atención Médica"] // cambiado de Ocupada a Atención Médica
+                  .filter((bed) => {
+                    const assigned = patients.find((p) => p.bed_id === bed.id);
+                    // Excluir camas donde el paciente esté en "diagnosticos_procedimientos" O "pre-egreso" para evitar duplicación
+                    return !assigned || (getPatientEffectiveStatus(assigned) !== "diagnosticos_procedimientos" && getPatientEffectiveStatus(assigned) !== "pre-egreso");
+                  })
+                  .map((bed) => {
+                    const assigned = patients.find((p) => p.bed_id === bed.id);
+                    const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                    return (
+                      // SOLO el contenedor grande es draggable cuando hay paciente asignado
+                      <div
+                        key={bed.id}
+                        data-draggable-patient={assigned ? String(assigned.id) : undefined}
+                        className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-red-600/10 border-l-4 border-red-600`}
+                      >
+                        <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
+                        <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                        {assigned ? (
+                          <div className="mt-2 bg-white/5 p-2 rounded">
+                            <button
+                              type="button"
+                              className="font-medium text-left w-full text-inherit hover:underline"
+                              onClick={() => openProfile(assigned.id)}
+                            >
+                              {assigned.name}
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="mt-2 text-sm text-gray-300">Sin paciente</div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* Columna: Procedimiento (Diagnóstico / Proced.) */}
+          {canViewColumn("diagnosticos_procedimientos") && (
+            <div className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="diagnosticos_procedimientos">
+              <h4 className="font-semibold mb-2 text-center">Diagnóstico / Proced.</h4>
+              <div className="flex-1">
+                {/* Placeholder para sombra preview cuando se hoverea (sólo si la columna está permitida) */}
+                {allowedColumns.includes("diagnosticos_procedimientos") && hoverStatus === "diagnosticos_procedimientos" ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {diagnosticBeds.length > 0 ? diagnosticBeds.map((bed) => {
+                  const assigned = patients.find((p) => p.bed_id === bed.id);
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  return (
+                    <div
+                      key={bed.id}
+                      data-draggable-patient={assigned ? String(assigned.id) : undefined}
+                      className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-blue-600/10 border-l-4 border-blue-600`}
+                    >
+                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
+                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                      {assigned ? (
+                        <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                          <button
+                            type="button"
+                            className="font-medium mb-1 text-left w-full text-inherit hover:underline"
+                            onClick={() => openProfile(assigned.id)}
+                          >
+                            {assigned.name}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Columna: Pre Egreso (pre-egreso) - mostrar tarjetas completas (cama + paciente) */}
+          {canViewColumn("pre-egreso") && (
+            <div
+              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col"
+              data-drop-column="pre-egreso"
+            >
+              <h4 className="font-semibold mb-2 text-center">Pre-egreso</h4>
+              <div className="flex-1">
+                {/* Placeholder / sombra preview — solo si la columna está permitida en este drag */}
+                {allowedColumns.includes("pre-egreso") && hoverStatus === "pre-egreso" ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {preEgresoBeds.length > 0 ? preEgresoBeds.map((bed) => {
+                  const assigned = patients.find((p) => p.bed_id === bed.id);
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  return (
+                    <div
+                      key={bed.id}
+                      data-draggable-patient={assigned ? String(assigned.id) : undefined}
+                      className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-amber-600/10 border-l-4 border-amber-600`}
+                    >
+                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
+                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                      {assigned ? (
+                        <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                          <button
+                            type="button"
+                            className="font-medium mb-1 text-left w-full text-inherit hover:underline"
+                            onClick={() => openProfile(assigned.id)}
+                          >
+                            {assigned.name}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                }) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Columna: Egreso (pacientes dados de alta) */}
+          {canViewColumn("de alta") && (
+            <div className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="de alta">
+              <h4 className="font-semibold mb-2 text-center">Egreso</h4>
+              <div className="flex-1">
+                {/* Placeholder: use same color & padding as patient cards and match dragged rect height */}
+                {allowedColumns.includes("de alta") && hoverStatus === "de alta" ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {dischargedPatients.map((p: Patient & { discharge_time?: string | null }) => (
+                  <div key={p.id} className="mb-2 bg-white/20 rounded shadow p-2 text-white">
                     <button
                       type="button"
                       className="font-bold text-left w-full text-inherit hover:underline"
@@ -1388,284 +1612,87 @@ export default function BedSwapBoard() {
                     >
                       {p.name}
                     </button>
-                    {/* Mostrar fecha y hora completa de ingreso si existe */}
-                    <div className="text-xs">
-                      Fecha y hora de ingreso: {p.estimated_time ? to12HourWithDate(p.estimated_time) : "—"}
+                    <div className="text-xs">Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}</div>
+                    {/* actions + history view */}
+                    <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                      <div className="flex flex-col gap-2">
+                        {/* Eliminar los botones de diagnóstico/procedimientos aquí */}
+                      </div>
                     </div>
                   </div>
-                ))
-              )}
+                ))}
+              </div>
             </div>
-          </div>
-          {/* Column: Camas disponibles */}
-          <div
-            className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("Disponible") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
-            data-drop-column="Disponible"
-          >
-            <h4 className="font-semibold mb-2 text-center">Camas disponibles</h4>
-            <div className="flex-1">
-              {/* Placeholder de paciente (preview shadow) cuando se arrastra una tarjeta de paciente */}
-              {allowedColumns.includes("Disponible") && hoverStatus === "Disponible" && placeholderHeight ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
-                />
-              ) : null}
-              {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Disponible (sólo si está permitido) */}
-              {allowedColumns.includes("Disponible") && hoverStatus === "Disponible" && _bedPlaceholder?.status === "Disponible" ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={_bedPlaceholder?.height ? { height: `${_bedPlaceholder.height}px` } : undefined}
-                />
-              ) : null}
-              {statusGroups.Disponible.map((bed) => {
-                const assigned = patients.find((p) => p.bed_id === bed.id);
-                const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
-                const isBedHighlight = hoverStatus === `bed-${bed.id}`;
-                return (
-                  <div
-                    key={bed.id}
-                    data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient ? String(bed.id) : undefined}
-                    data-drop-bed={String(bed.id)}
-                    className={`mb-2 rounded shadow p-2 ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.status === "Disponible" ? "bg-green-600/10 border-l-4 border-green-600" : ""}`}
-                  >
-                    <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                    <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
-                    <div className="mt-2 text-sm text-gray-300">{assigned ? assigned.name : "Sin paciente"}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          )}
 
-          {/* Column: Atención médica (camas ocupadas) */}
-          <div className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("Ocupada") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`} data-drop-column="Ocupada">
-            <h4 className="font-semibold mb-2 text-center">Atención Médica</h4>
-            <div className="flex-1">
-              {/* Placeholder de paciente cuando se arrastra una tarjeta (ej. desde Diagnóstico) hacia Atención Médica */}
-              {allowedColumns.includes("Ocupada") && hoverStatus === "Ocupada" && placeholderHeight ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
-                />
-              ) : null}
-              {statusGroups["Atención Médica"] // cambiado de Ocupada a Atención Médica
-                .filter((bed) => {
+          {/* Columna final: Limpieza */}
+          {canViewColumn("Limpieza") && (
+            <div
+              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col"
+              data-drop-column="Limpieza"
+            >
+              <h4 className="font-semibold mb-2 text-center">Limpieza</h4>
+              <div className="flex-1">
+                {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Limpieza (sólo si está permitido) */}
+                {allowedColumns.includes("Limpieza") && hoverStatus === "Limpieza" && _bedPlaceholder?.status === "Limpieza" ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={_bedPlaceholder?.height ? { height: `${_bedPlaceholder.height}px` } : undefined}
+                  />
+                ) : null}
+                {statusGroups.Limpieza.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
-                  // Excluir camas donde el paciente esté en "diagnosticos_procedimientos" O "pre-egreso" para evitar duplicación
-                  return !assigned || (getPatientEffectiveStatus(assigned) !== "diagnosticos_procedimientos" && getPatientEffectiveStatus(assigned) !== "pre-egreso");
-                })
-                .map((bed) => {
-                  const assigned = patients.find((p) => p.bed_id === bed.id);
+                  const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
                   const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  // compute CSS variable object without using `any`
+                  const selectStyle = ({ ['--select-bg']: auxStatusColor(bed.aux_status ?? "Limpieza") } as unknown) as React.CSSProperties;
                   return (
-                    // SOLO el contenedor grande es draggable cuando hay paciente asignado
                     <div
                       key={bed.id}
-                      data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                      className={`mb-2 rounded shadow p-2 ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-red-600/10 border-l-4 border-red-600`}
+                      data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient && (bed.status !== "Limpieza" || bed.aux_status === "Limpieza") ? String(bed.id) : undefined}
+                      data-drop-bed={String(bed.id)}
+                      className={`mb-2 rounded shadow p-2 bg-yellow-500/10 border-l-4 border-yellow-500 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""}`}
                     >
                       <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
                       <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
-                      {assigned ? (
-                        <div className="mt-2 bg-white/5 p-2 rounded">
-                          <button
-                            type="button"
-                            className="font-medium text-left w-full text-inherit hover:underline"
-                            onClick={() => openProfile(assigned.id)}
-                          >
-                            {assigned.name}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="mt-2 text-sm text-gray-300">Sin paciente</div>
-                      )}
+
+                      {/* Select only visible in Limpieza column to set aux_status */}
+                      <div className="mt-2">
+                        <label className="text-xs block mb-1">Estado limpieza</label>
+                        <select
+                          value={bed.aux_status ?? "Limpieza"}
+                          onChange={async (e) => {
+                            const val = e.target.value as AuxBedStatus;
+                            // optimistic update
+                            setBeds((prev) => prev.map((b) => (b.id === bed.id ? { ...b, aux_status: val } : b)));
+                            try {
+                              await fetch("/api/beds", {
+                                method: "PUT",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ id: bed.id, aux_status: val }),
+                              });
+                              void mutate("/api/beds");
+                            } catch (err) {
+                              console.error("Error actualizando aux_status:", err);
+                            }
+                          }}
+                          /* appearance-none + focus utilities to remove native blue halo; auxStatusClass still provides color classes */
+                          className={`w-full rounded p-1 custom-select appearance-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${auxStatusClass(bed.aux_status ?? "Limpieza")}`}
+                          style={selectStyle}
+                        >
+                          <option value="Limpieza">Limpieza</option>
+                          <option value="Mantenimiento">Mantenimiento</option>
+                          <option value="Aislamiento">Aislamiento</option>
+                          <option value="Reserva">Reserva</option>
+                        </select>
+                      </div>
+                      {/* assigned info */}
                     </div>
                   );
                 })}
+              </div>
             </div>
-          </div>
-
-          {/* Columna: Procedimiento (Diagnóstico / Proced.) */}
-          <div className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("diagnosticos_procedimientos") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`} data-drop-column="diagnosticos_procedimientos">
-            <h4 className="font-semibold mb-2 text-center">Diagnóstico / Proced.</h4>
-            <div className="flex-1">
-              {/* Placeholder para sombra preview cuando se hoverea (sólo si la columna está permitida) */}
-              {allowedColumns.includes("diagnosticos_procedimientos") && hoverStatus === "diagnosticos_procedimientos" ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
-                />
-              ) : null}
-              {diagnosticBeds.length > 0 ? diagnosticBeds.map((bed) => {
-                const assigned = patients.find((p) => p.bed_id === bed.id);
-                const isBedHighlight = hoverStatus === `bed-${bed.id}`;
-                return (
-                  <div
-                    key={bed.id}
-                    data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                    className={`mb-2 rounded shadow p-2 ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-blue-600/10 border-l-4 border-blue-600`}
-                  >
-                    <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                    <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
-                    {assigned ? (
-                      <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
-                        <button
-                          type="button"
-                          className="font-medium mb-1 text-left w-full text-inherit hover:underline"
-                          onClick={() => openProfile(assigned.id)}
-                        >
-                          {assigned.name}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              }) : null}
-            </div>
-          </div>
-
-          {/* Columna: Pre Egreso (pre-egreso) - mostrar tarjetas completas (cama + paciente) */}
-          <div
-            className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("pre-egreso") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
-            data-drop-column="pre-egreso"
-          >
-            <h4 className="font-semibold mb-2 text-center">Pre-egreso</h4>
-            <div className="flex-1">
-              {/* Placeholder / sombra preview — solo si la columna está permitida en este drag */}
-              {allowedColumns.includes("pre-egreso") && hoverStatus === "pre-egreso" ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
-                />
-              ) : null}
-              {preEgresoBeds.length > 0 ? preEgresoBeds.map((bed) => {
-                const assigned = patients.find((p) => p.bed_id === bed.id);
-                const isBedHighlight = hoverStatus === `bed-${bed.id}`;
-                return (
-                  <div
-                    key={bed.id}
-                    data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                    className={`mb-2 rounded shadow p-2 ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-amber-600/10 border-l-4 border-amber-600`}
-                  >
-                    <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                    <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
-                    {assigned ? (
-                      <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
-                        <button
-                          type="button"
-                          className="font-medium mb-1 text-left w-full text-inherit hover:underline"
-                          onClick={() => openProfile(assigned.id)}
-                        >
-                          {assigned.name}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              }) : null}
-            </div>
-          </div>
-
-          {/* Columna: Egreso (pacientes dados de alta) */}
-          <div className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("de alta") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`} data-drop-column="de alta">
-            <h4 className="font-semibold mb-2 text-center">Egreso</h4>
-            <div className="flex-1">
-              {/* Placeholder: use same color & padding as patient cards and match dragged rect height */}
-              {allowedColumns.includes("de alta") && hoverStatus === "de alta" ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
-                />
-              ) : null}
-              {dischargedPatients.map((p: Patient & { discharge_time?: string | null }) => (
-                <div key={p.id} className="mb-2 bg-white/20 rounded shadow p-2">
-                  <button
-                    type="button"
-                    className="font-bold text-left w-full text-inherit hover:underline"
-                    onClick={() => openProfile(p.id)}
-                  >
-                    {p.name}
-                  </button>
-                  <div className="text-xs">Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}</div>
-                  {/* actions + history view */}
-                  <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
-                    <div className="flex flex-col gap-2">
-                      {/* Eliminar los botones de diagnóstico/procedimientos aquí */}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Columna final: Limpieza */}
-          <div
-
-            className={`col-span-1 bg-white/10 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("Limpieza") ? "ring-2 ring-sky-400 bg-sky-900/20" : ""}`}
-            data-drop-column="Limpieza"
-          >
-            <h4 className="font-semibold mb-2 text-center">Limpieza</h4>
-            <div className="flex-1">
-              {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Limpieza (sólo si está permitido) */}
-              {allowedColumns.includes("Limpieza") && hoverStatus === "Limpieza" && _bedPlaceholder?.status === "Limpieza" ? (
-                <div
-                  className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                  style={_bedPlaceholder?.height ? { height: `${_bedPlaceholder.height}px` } : undefined}
-                />
-              ) : null}
-              {statusGroups.Limpieza.map((bed) => {
-                const assigned = patients.find((p) => p.bed_id === bed.id);
-                const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
-                const isBedHighlight = hoverStatus === `bed-${bed.id}`;
-                // compute CSS variable object without using `any`
-                const selectStyle = ({ ['--select-bg']: auxStatusColor(bed.aux_status ?? "Limpieza") } as unknown) as React.CSSProperties;
-                return (
-                  <div
-                    key={bed.id}
-                    data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient && (bed.status !== "Limpieza" || bed.aux_status === "Limpieza") ? String(bed.id) : undefined}
-                    data-drop-bed={String(bed.id)}
-                    className={`mb-2 rounded shadow p-2 bg-yellow-500/10 border-l-4 border-yellow-500 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""}`}
-                  >
-                    <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                    <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
-
-                    {/* Select only visible in Limpieza column to set aux_status */}
-                    <div className="mt-2">
-                      <label className="text-xs block mb-1">Estado limpieza</label>
-                      <select
-                        value={bed.aux_status ?? "Limpieza"}
-                        onChange={async (e) => {
-                          const val = e.target.value as AuxBedStatus;
-                          // optimistic update
-                          setBeds((prev) => prev.map((b) => (b.id === bed.id ? { ...b, aux_status: val } : b)));
-                          try {
-                            await fetch("/api/beds", {
-                              method: "PUT",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ id: bed.id, aux_status: val }),
-                            });
-                            void mutate("/api/beds");
-                          } catch (err) {
-                            console.error("Error actualizando aux_status:", err);
-                          }
-                        }}
-                        /* appearance-none + focus utilities to remove native blue halo; auxStatusClass still provides color classes */
-                        className={`w-full rounded p-1 custom-select appearance-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 ${auxStatusClass(bed.aux_status ?? "Limpieza")}`}
-                        style={selectStyle}
-                      >
-                        <option value="Limpieza">Limpieza</option>
-                        <option value="Mantenimiento">Mantenimiento</option>
-                        <option value="Aislamiento">Aislamiento</option>
-                        <option value="Reserva">Reserva</option>
-                      </select>
-                    </div>
-                    {/* assigned info */}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1846,332 +1873,334 @@ export default function BedSwapBoard() {
       )}
 
       {/* Patient profile modal */}
-      {openProfileFor !== null && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
-          <div className="relative bg-white text-black rounded p-4 w-full max-w-2xl z-70">
-            {/* Close X */}
-            <button
-              type="button"
-              aria-label="Cerrar"
-              className="absolute top-3 right-3 text-rose-600 hover:text-rose-800 transition-all"
-              onClick={() => setOpenProfileFor(null)}
-              style={{ fontSize: "2rem", background: "none", border: "none", padding: 0, lineHeight: 1 }}
-            >
-              <RiCloseCircleLine size={32} />
-            </button>
-            {/* Menú de tabs */}
-            <div className="flex gap-2 mb-4">
+      {
+        openProfileFor !== null && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
+            <div className="relative bg-white text-black rounded p-4 w-full max-w-2xl z-70">
+              {/* Close X */}
               <button
-                className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                onClick={() => setProfileTab("perfil")}
+                type="button"
+                aria-label="Cerrar"
+                className="absolute top-3 right-3 text-rose-600 hover:text-rose-800 transition-all"
+                onClick={() => setOpenProfileFor(null)}
+                style={{ fontSize: "2rem", background: "none", border: "none", padding: 0, lineHeight: 1 }}
               >
-                Perfil paciente
+                <RiCloseCircleLine size={32} />
               </button>
-              <button
-                className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-200"}`}
-                onClick={() => setProfileTab("diagnostico")}
-              >
-                Diagnóstico
-              </button>
-              <button
-                className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
-                onClick={() => {
-                  setProfileTab("procedimientos");
-                  if (openProfileFor) void loadProcedures(openProfileFor);
-                }}
-              >
-                Procedimientos
-              </button>
-              {/* NUEVO: pestaña Pre-egreso */}
-              <button
-                className={`px-6 py-1 rounded font-semibold ${profileTab === "pre-egreso" ? "bg-rose-600 text-white" : "bg-gray-200"}`}
-                onClick={() => setProfileTab("pre-egreso")}
-              >
-                Pre-egreso
-              </button>
-            </div>
-            {/* Contenido según tab */}
-            {profileTab === "perfil" && (
-              <div>
-                <h3 className="font-bold mb-2">Ficha del paciente</h3>
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <label className="block text-xs">Nombre</label>
-                    <input
-                      className="w-full p-1 border rounded"
-                      value={profileForm.name ?? profilePatient?.name ?? ""}
-                      onChange={(e) => setProfileForm((s) => ({ ...s, name: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs">Fecha de Nacimiento</label>
-                    <input
-                      type="date"
-                      className="w-full p-1 border rounded"
-                      value={profileForm.birth_date ?? ""}
-                      onChange={(e) => setProfileForm((s) => ({ ...s, birth_date: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs">Ciudad</label>
-                    <input
-                      className="w-full p-1 border rounded"
-                      value={profileForm.city ?? ""}
-                      onChange={(e) => setProfileForm((s) => ({ ...s, city: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs">Celular</label>
-                    <input
-                      className="w-full p-1 border rounded"
-                      value={profileForm.phone ?? ""}
-                      onChange={(e) => setProfileForm((s) => ({ ...s, phone: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs">Tipo de sangre</label>
-                    <input
-                      className="w-full p-1 border rounded"
-                      value={profileForm.blood_type ?? ""}
-                      onChange={(e) => setProfileForm((s) => ({ ...s, blood_type: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs">Comentario extra</label>
-                    <textarea
-                      className="w-full p-1 border rounded"
-                      value={profileForm.extra_comment ?? ""}
-                      onChange={(e) => setProfileForm((s) => ({ ...s, extra_comment: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-                    onClick={() => {
-                      setOpenProfileFor(null);
-                    }}
-                  >
-                    Cerrar
-                  </button>
-                  <button
-                    className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50"
-                    onClick={async () => {
-                      if (!openProfileFor) return;
-                      // construir body con sólo campos permitidos
-                      const body: Record<string, unknown> = {};
-                      if (typeof profileForm.name === "string") body.name = profileForm.name;
-                      if (typeof profileForm.city === "string") body.city = profileForm.city;
-                      if (typeof profileForm.phone === "string") body.phone = profileForm.phone;
-                      if (typeof profileForm.blood_type === "string") body.blood_type = profileForm.blood_type;
-                      if (typeof profileForm.birth_date === "string") body.birth_date = profileForm.birth_date; // string ISO YYYY-MM-DD
-                      if (typeof profileForm.extra_comment === "string") body.extra_comment = profileForm.extra_comment;
-                      try {
-                        const res = await fetch(`/api/patients/${openProfileFor}`, {
-                          method: "PUT",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(body),
-                        });
-                        if (res.ok) {
-                          void mutate("/api/patients");
-                          setProfilePatient((prev) => ({ ...(prev ?? {}), ...(body as Partial<Patient>) } as Patient));
-                          setOpenProfileFor(null);
-                        } else {
-                          console.error("PUT paciente falló:", await res.text());
-                        }
-                      } catch (err) {
-                        console.error("Error guardando perfil:", err);
-                      }
-                    }}
-                  >
-                    Guardar
-                  </button>
-                </div>
+              {/* Menú de tabs */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                  onClick={() => setProfileTab("perfil")}
+                >
+                  Perfil paciente
+                </button>
+                <button
+                  className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-200"}`}
+                  onClick={() => setProfileTab("diagnostico")}
+                >
+                  Diagnóstico
+                </button>
+                <button
+                  className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
+                  onClick={() => {
+                    setProfileTab("procedimientos");
+                    if (openProfileFor) void loadProcedures(openProfileFor);
+                  }}
+                >
+                  Procedimientos
+                </button>
+                {/* NUEVO: pestaña Pre-egreso */}
+                <button
+                  className={`px-6 py-1 rounded font-semibold ${profileTab === "pre-egreso" ? "bg-rose-600 text-white" : "bg-gray-200"}`}
+                  onClick={() => setProfileTab("pre-egreso")}
+                >
+                  Pre-egreso
+                </button>
               </div>
-            )}
-            {profileTab === "diagnostico" && (
-              <div>
-                <h3 className="font-bold mb-2">Diagnóstico</h3>
-                <div className="text-xs text-gray-600 mb-2">
-                  {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
-                </div>
-                {/* Estado de edición para diagnóstico */}
-                {typeof openProfileFor === "number" && (
-                  <DiagnosticoEditable
-                    patientId={openProfileFor}
-                    diagnosticNotes={diagnosticNotes}
-                    setDiagnosticNotes={setDiagnosticNotes}
-                    diagBlob={diagBlob}
-                    setDiagBlob={setDiagBlob}
-                    diagUrl={diagUrl}
-                    setDiagUrl={setDiagUrl}
-                    diagDuration={diagDuration}
-                    setDiagDuration={setDiagDuration}
-                    diagRecording={diagRecording}
-                    setDiagRecording={setDiagRecording}
-                    diagRecorderRef={diagRecorderRef}
-                    diagChunksRef={diagChunksRef}
-                    diagStartRef={diagStartRef}
-                    diagSaving={diagSaving}
-                    setDiagSaving={setDiagSaving}
-                    saveDiagnosticNote={saveDiagnosticNote}
-                  />
-                )}
-              </div>
-            )}
-            {profileTab === "procedimientos" && (
-              <div>
-                <h3 className="font-bold mb-2">Procedimientos</h3>
-                <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-                  {(procList[openProfileFor ?? 0] ?? []).map((proc) => {
-                    const isEditing = editingProcId === proc.id;
-                    const isSavingThis = Boolean(procEditingSaving[proc.id]);
-                    return (
-                      <div key={proc.id} className="p-2 border rounded">
-                        <div className="flex justify-between items-start gap-2">
-                          <div className="text-xs text-gray-500">
-                            {to12HourWithDate(proc.created_at)}
-                          </div>
-                          <div className="text-xs text-gray-400">#{proc.id}</div>
-                        </div>
-                        {/* Editar procedimiento: textarea si está editando, texto si no */}
-                        {isEditing ? (
-                          <textarea
-                            className="w-full mt-2 p-2 border rounded"
-                            value={editProcDesc[proc.id] ?? ""}
-                            onChange={(e) =>
-                              setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
-                            }
-                          />
-                        ) : (
-                          <div className="mt-2">{proc.descripcion}</div>
-                        )}
-                        {proc.audio_url ? (
-                          <div className="mt-2">
-                            <audio controls src={proc.audio_url} className="w-full" />
-                            <div className="text-xs text-gray-400">Audio adjunto</div>
-                          </div>
-                        ) : null}
-                        <div className="mt-2 flex gap-2">
-                          {isEditing ? (
-                            <>
-                              <button
-                                className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
-                                onClick={async () => {
-                                  // delegate to central handler (it toggles saving state)
-                                  await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
-                                }}
-                                disabled={isSavingThis}
-                              >
-                                {isSavingThis ? "Guardando..." : "Guardar"}
-                              </button>
-                              <button
-                                className="px-3 py-1 rounded bg-gray-200"
-                                onClick={() => {
-                                  setEditingProcId(null);
-                                  setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
-                                }}
-                              >
-                                Cancelar
-                              </button>
-                              <button
-                                className="px-3 py-1 rounded bg-red-600 text-white"
-                                onClick={async () => {
-                                  await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                                }}
-                              >
-                                Eliminar
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
-                                onClick={() => {
-                                  setEditingProcId(proc.id);
-                                  setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
-                                }}
-                              >
-                                Editar
-                              </button>
-                              <button
-                                className="px-3 py-1 rounded bg-red-600 text-white"
-                                onClick={async () => {
-                                  await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                                }}
-                              >
-                                Eliminar
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3 flex flex-col gap-2">
-                  <textarea
-                    className="w-full p-2 border rounded"
-                    placeholder="Agregar nuevo procedimiento (texto)..."
-                    value={procInput}
-                    onChange={(e) => setProcInput(e.target.value)}
-                  />
-                  <div className="flex gap-2">
+              {/* Contenido según tab */}
+              {profileTab === "perfil" && (
+                <div>
+                  <h3 className="font-bold mb-2">Ficha del paciente</h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <label className="block text-xs">Nombre</label>
+                      <input
+                        className="w-full p-1 border rounded"
+                        value={profileForm.name ?? profilePatient?.name ?? ""}
+                        onChange={(e) => setProfileForm((s) => ({ ...s, name: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs">Fecha de Nacimiento</label>
+                      <input
+                        type="date"
+                        className="w-full p-1 border rounded"
+                        value={profileForm.birth_date ?? ""}
+                        onChange={(e) => setProfileForm((s) => ({ ...s, birth_date: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs">Ciudad</label>
+                      <input
+                        className="w-full p-1 border rounded"
+                        value={profileForm.city ?? ""}
+                        onChange={(e) => setProfileForm((s) => ({ ...s, city: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs">Celular</label>
+                      <input
+                        className="w-full p-1 border rounded"
+                        value={profileForm.phone ?? ""}
+                        onChange={(e) => setProfileForm((s) => ({ ...s, phone: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs">Tipo de sangre</label>
+                      <input
+                        className="w-full p-1 border rounded"
+                        value={profileForm.blood_type ?? ""}
+                        onChange={(e) => setProfileForm((s) => ({ ...s, blood_type: e.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs">Comentario extra</label>
+                      <textarea
+                        className="w-full p-1 border rounded"
+                        value={profileForm.extra_comment ?? ""}
+                        onChange={(e) => setProfileForm((s) => ({ ...s, extra_comment: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 mt-4">
                     <button
-                      className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
-                      onClick={async () => {
-                        if (openProcFor) await addProcedure(openProcFor);
+                      className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+                      onClick={() => {
+                        setOpenProfileFor(null);
                       }}
-                      disabled={!procInput.trim()}
                     >
-                      Guardar procedimiento
+                      Cerrar
                     </button>
                     <button
-                      className="px-3 py-1 rounded bg-gray-200"
-                      onClick={() => setProcInput("")}
+                      className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50"
+                      onClick={async () => {
+                        if (!openProfileFor) return;
+                        // construir body con sólo campos permitidos
+                        const body: Record<string, unknown> = {};
+                        if (typeof profileForm.name === "string") body.name = profileForm.name;
+                        if (typeof profileForm.city === "string") body.city = profileForm.city;
+                        if (typeof profileForm.phone === "string") body.phone = profileForm.phone;
+                        if (typeof profileForm.blood_type === "string") body.blood_type = profileForm.blood_type;
+                        if (typeof profileForm.birth_date === "string") body.birth_date = profileForm.birth_date; // string ISO YYYY-MM-DD
+                        if (typeof profileForm.extra_comment === "string") body.extra_comment = profileForm.extra_comment;
+                        try {
+                          const res = await fetch(`/api/patients/${openProfileFor}`, {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(body),
+                          });
+                          if (res.ok) {
+                            void mutate("/api/patients");
+                            setProfilePatient((prev) => ({ ...(prev ?? {}), ...(body as Partial<Patient>) } as Patient));
+                            setOpenProfileFor(null);
+                          } else {
+                            console.error("PUT paciente falló:", await res.text());
+                          }
+                        } catch (err) {
+                          console.error("Error guardando perfil:", err);
+                        }
+                      }}
                     >
-                      Limpiar
+                      Guardar
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
-            {/* NUEVO: pestaña Pre-egreso */}
-            {profileTab === "pre-egreso" && (
-              <div>
-                <h3 className="font-bold mb-2">Pre-egreso</h3>
-                <div className="text-xs text-gray-600 mb-2">
-                  {preEgresoSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
+              )}
+              {profileTab === "diagnostico" && (
+                <div>
+                  <h3 className="font-bold mb-2">Diagnóstico</h3>
+                  <div className="text-xs text-gray-600 mb-2">
+                    {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
+                  </div>
+                  {/* Estado de edición para diagnóstico */}
+                  {typeof openProfileFor === "number" && (
+                    <DiagnosticoEditable
+                      patientId={openProfileFor}
+                      diagnosticNotes={diagnosticNotes}
+                      setDiagnosticNotes={setDiagnosticNotes}
+                      diagBlob={diagBlob}
+                      setDiagBlob={setDiagBlob}
+                      diagUrl={diagUrl}
+                      setDiagUrl={setDiagUrl}
+                      diagDuration={diagDuration}
+                      setDiagDuration={setDiagDuration}
+                      diagRecording={diagRecording}
+                      setDiagRecording={setDiagRecording}
+                      diagRecorderRef={diagRecorderRef}
+                      diagChunksRef={diagChunksRef}
+                      diagStartRef={diagStartRef}
+                      diagSaving={diagSaving}
+                      setDiagSaving={setDiagSaving}
+                      saveDiagnosticNote={saveDiagnosticNote}
+                    />
+                  )}
                 </div>
-                {/* Estado de edición para pre-egreso */}
-                {typeof openProfileFor === "number" && (
-                  <PreEgresoEditable
-                    patientId={openProfileFor}
-                    preEgresoNotes={preEgresoNotes}
-                    setPreEgresoNotes={setPreEgresoNotes}
-                    preEgresoBlob={preEgresoBlob}
-                    setPreEgresoBlob={setPreEgresoBlob}
-                    preEgresoUrl={preEgresoUrl}
-                    setPreEgresoUrl={setPreEgresoUrl}
-                    preEgresoDuration={preEgresoDuration}
-                    setPreEgresoDuration={setPreEgresoDuration}
-                    preEgresoRecording={preEgresoRecording}
-                    setPreEgresoRecording={setPreEgresoRecording}
-                    preEgresoRecorderRef={preEgresoRecorderRef}
-                    preEgresoChunksRef={preEgresoChunksRef}
-                    preEgresoStartRef={preEgresoStartRef}
-                    preEgresoSaving={preEgresoSaving}
-                    setPreEgresoSaving={setPreEgresoSaving}
-                    savePreEgreso={savePreEgreso}
-                  />
-                )}
-              </div>
-            )}
+              )}
+              {profileTab === "procedimientos" && (
+                <div>
+                  <h3 className="font-bold mb-2">Procedimientos</h3>
+                  <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                    {(procList[openProfileFor ?? 0] ?? []).map((proc) => {
+                      const isEditing = editingProcId === proc.id;
+                      const isSavingThis = Boolean(procEditingSaving[proc.id]);
+                      return (
+                        <div key={proc.id} className="p-2 border rounded">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="text-xs text-gray-500">
+                              {to12HourWithDate(proc.created_at)}
+                            </div>
+                            <div className="text-xs text-gray-400">#{proc.id}</div>
+                          </div>
+                          {/* Editar procedimiento: textarea si está editando, texto si no */}
+                          {isEditing ? (
+                            <textarea
+                              className="w-full mt-2 p-2 border rounded"
+                              value={editProcDesc[proc.id] ?? ""}
+                              onChange={(e) =>
+                                setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
+                              }
+                            />
+                          ) : (
+                            <div className="mt-2">{proc.descripcion}</div>
+                          )}
+                          {proc.audio_url ? (
+                            <div className="mt-2">
+                              <audio controls src={proc.audio_url} className="w-full" />
+                              <div className="text-xs text-gray-400">Audio adjunto</div>
+                            </div>
+                          ) : null}
+                          <div className="mt-2 flex gap-2">
+                            {isEditing ? (
+                              <>
+                                <button
+                                  className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
+                                  onClick={async () => {
+                                    // delegate to central handler (it toggles saving state)
+                                    await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                  }}
+                                  disabled={isSavingThis}
+                                >
+                                  {isSavingThis ? "Guardando..." : "Guardar"}
+                                </button>
+                                <button
+                                  className="px-3 py-1 rounded bg-gray-200"
+                                  onClick={() => {
+                                    setEditingProcId(null);
+                                    setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
+                                  }}
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  className="px-3 py-1 rounded bg-red-600 text-white"
+                                  onClick={async () => {
+                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                  }}
+                                >
+                                  Eliminar
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
+                                  onClick={() => {
+                                    setEditingProcId(proc.id);
+                                    setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
+                                  }}
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  className="px-3 py-1 rounded bg-red-600 text-white"
+                                  onClick={async () => {
+                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                  }}
+                                >
+                                  Eliminar
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2">
+                    <textarea
+                      className="w-full p-2 border rounded"
+                      placeholder="Agregar nuevo procedimiento (texto)..."
+                      value={procInput}
+                      onChange={(e) => setProcInput(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                        onClick={async () => {
+                          if (openProcFor) await addProcedure(openProcFor);
+                        }}
+                        disabled={!procInput.trim()}
+                      >
+                        Guardar procedimiento
+                      </button>
+                      <button
+                        className="px-3 py-1 rounded bg-gray-200"
+                        onClick={() => setProcInput("")}
+                      >
+                        Limpiar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* NUEVO: pestaña Pre-egreso */}
+              {profileTab === "pre-egreso" && (
+                <div>
+                  <h3 className="font-bold mb-2">Pre-egreso</h3>
+                  <div className="text-xs text-gray-600 mb-2">
+                    {preEgresoSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
+                  </div>
+                  {/* Estado de edición para pre-egreso */}
+                  {typeof openProfileFor === "number" && (
+                    <PreEgresoEditable
+                      patientId={openProfileFor}
+                      preEgresoNotes={preEgresoNotes}
+                      setPreEgresoNotes={setPreEgresoNotes}
+                      preEgresoBlob={preEgresoBlob}
+                      setPreEgresoBlob={setPreEgresoBlob}
+                      preEgresoUrl={preEgresoUrl}
+                      setPreEgresoUrl={setPreEgresoUrl}
+                      preEgresoDuration={preEgresoDuration}
+                      setPreEgresoDuration={setPreEgresoDuration}
+                      preEgresoRecording={preEgresoRecording}
+                      setPreEgresoRecording={setPreEgresoRecording}
+                      preEgresoRecorderRef={preEgresoRecorderRef}
+                      preEgresoChunksRef={preEgresoChunksRef}
+                      preEgresoStartRef={preEgresoStartRef}
+                      preEgresoSaving={preEgresoSaving}
+                      setPreEgresoSaving={setPreEgresoSaving}
+                      savePreEgreso={savePreEgreso}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
 
