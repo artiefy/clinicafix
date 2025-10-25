@@ -5,9 +5,9 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { useUser } from "@clerk/nextjs";
 import { AiOutlineCheckCircle } from "react-icons/ai";
-import { FaStethoscope } from "react-icons/fa";
+import { FaStethoscope, FaUserInjured } from "react-icons/fa";
 import { IoExitOutline } from "react-icons/io5";
-import { MdMedicalServices } from "react-icons/md";
+import { MdMedicalServices, MdOutlineCleaningServices } from "react-icons/md";
 import { RiCloseCircleLine } from "react-icons/ri";
 import { RiDoorOpenLine } from "react-icons/ri";
 import useSWR, { useSWRConfig } from "swr";
@@ -15,7 +15,9 @@ import useSWR, { useSWRConfig } from "swr";
 import { showToast } from "@/components/toastService";
 import { AuxBedStatus, Bed, Discharge, Patient, Procedure, Room } from "@/types"; // <-- añadí Discharge + Procedure
 import { Roles } from "@/types/globals";
-import { to12HourWithDate, to12HourWithDateShort } from "@/utils/time"; // <-- nuevo import (short variant)
+import { to12Hour, to12HourWithDate, to12HourWithDateShort } from "@/utils/time"; // <-- importar to12Hour
+
+import GradientText from './GradientText';
 
 function formatDate(date: Date | string | null | undefined) {
   // reutilizamos util consistente que devuelve "YYYY-MM-DD h:mm AM/PM"
@@ -1371,7 +1373,17 @@ export default function BedSwapBoard() {
   return (
     // tarjeta principal del gestor
     <div className="card">
-      <h3 className="card-title text-center">GESTIÓN DE PACIENTES Y CAMAS</h3>
+      <div className="text-center">
+        <GradientText
+          colors={["#40ffaa", "#4079ff", "#40ffaa", "#4079ff", "#40ffaa"]}
+          animationSpeed={3}
+          showBorder={false}
+          className="mb-3 text-4xl font-black leading-tight text-black"
+        >
+          SYO - IA
+        </GradientText>
+        <div className="text-xl text-gray-600 font-semibold">Gestión Dinámica y Asistida de Camas y Pacientes</div>
+      </div>
       <div className="w-full max-w-full">
         {/* Cambiado: usar flex con overflow-x-auto para móviles, manteniendo grid en desktop */}
         <div className="md:grid md:grid-cols-7 md:gap-4 md:w-full flex overflow-x-auto gap-4 w-full p-4">
@@ -1399,11 +1411,11 @@ export default function BedSwapBoard() {
                     <div
                       key={p.id}
                       data-draggable-patient={String(p.id)}
-                      className="bg-white card-item transition-all duration-300 ease-in-out transform-gpu"
+                      className="bg-white card-item relative transition-all duration-300 ease-in-out transform-gpu"
                     >
                       <button
                         type="button"
-                        className="bg-white font-bold text-left w-full text-black hover:underline"
+                        className="bg-white font-bold text-left w-full text-black hover:underline mt-2"
                         onClick={() => openProfile(p.id)}
                       >
                         {p.name}
@@ -1411,6 +1423,10 @@ export default function BedSwapBoard() {
                       {/* Mostrar fecha y hora completa de ingreso si existe */}
                       <div className="meta">
                         Hora de Ingreso: {p.estimated_time ? to12HourWithDateShort(p.estimated_time) : "—"}
+                      </div>
+
+                      <div className="absolute top-2 right-2 text-xl text-gray-700 opacity-90 pointer-events-none">
+                        <FaUserInjured />
                       </div>
                     </div>
                   ))
@@ -1453,7 +1469,7 @@ export default function BedSwapBoard() {
                       className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-green-600 bg-green-100/80`}
                     >
                       <div className="font-bold">CAMA {bed.id}</div>
-                      <div className="text-sm mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
+                      <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
                       <div className="meta">{formatDate(bed.last_update)}</div>
                       <div className="mt-2 meta">
                         {assigned ? (
@@ -1642,13 +1658,16 @@ export default function BedSwapBoard() {
                     >
                       {p.name}
                     </button>
-                    {/* Usar formato corto (sin 'ultimo:') */}
-                    <div className="meta">Hora de salida: {p.discharge_time ? to12HourWithDateShort(p.discharge_time) : "—"}</div>
-                    <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
-                      <div className="flex flex-col gap-2">
-                        {/* Eliminar los botones de diagnóstico/procedimientos aquí */}
-                      </div>
-                    </div>
+                    {/* Mostrar hora y fecha en líneas separadas */}
+                    <div className="meta font-semibold">Hora de salida:</div>
+                    {p.discharge_time ? (
+                      <>
+                        <div className="meta">{to12Hour(new Date(p.discharge_time))}</div>
+                        <div className="meta">{new Date(p.discharge_time).toLocaleString("en-US", { month: "short" }).toLowerCase()}, {new Date(p.discharge_time).getDate()}</div>
+                      </>
+                    ) : (
+                      <div className="meta">—</div>
+                    )}
                     <div className="absolute top-2 right-2 text-2xl text-teal-600 opacity-90 pointer-events-none">
                       <RiDoorOpenLine />
                     </div>
@@ -1684,7 +1703,7 @@ export default function BedSwapBoard() {
                       // permitir arrastrar camas en Limpieza hacia Disponible si no tienen paciente activo y no son Atención Médica
                       data-draggable-bed={!hasActivePatient && bed.status !== "Atención Médica" ? String(bed.id) : undefined}
                       data-drop-bed={String(bed.id)}
-                      className={`card-item ${isBedHighlight ? "ring-2 ring-sky-400" : ""} bg-yellow-50 border-l-4 border-yellow-500`}
+                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} bg-yellow-50 border-l-4 border-yellow-500`}
                     >
                       <div className="font-bold">CAMA {bed.id}</div>
                       <div className="text-md text-gray-700 mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
@@ -1721,6 +1740,9 @@ export default function BedSwapBoard() {
                         </select>
                       </div>
                       {/* assigned info */}
+                      <div className="absolute top-2 right-2 text-2xl text-yellow-600 opacity-90 pointer-events-none">
+                        <MdOutlineCleaningServices />
+                      </div>
                     </div>
                   );
                 })}

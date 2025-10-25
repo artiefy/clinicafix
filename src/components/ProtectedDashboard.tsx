@@ -37,7 +37,7 @@ export default function ProtectedDashboard({ children }: { children: React.React
     return (
         <div className="space-y-4">
             <div className="w-full flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Bienvenido, {name}</h2>
+                <h2 className="text-2xl font-semibold -mt-6">Bienvenido, {name}</h2>
             </div>
             {children}
         </div>

@@ -20,10 +20,10 @@ export default function Header() {
 
     return (
         <header
-            className="w-full text-white py-4 px-8 flex items-center justify-between shadow"
+            className="w-full text-white py-6 px-8 flex items-center justify-between shadow"
             style={{ background: 'linear-gradient(90deg, var(--main-1), var(--main-2))' }}
         >
-            <h1 className="text-2xl font-bold">SYO - Gestión Inteligente de Egresos</h1>
+            <h1 className="text-4xl font-bold">DIME</h1>
             <div className="flex items-center space-x-3">
                 <HeaderUserMenu />
             </div>
