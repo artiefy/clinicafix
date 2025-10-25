@@ -160,8 +160,20 @@ export const pre_egresos = createTable(
     patient_id: d.integer().notNull().references(() => patients.id),
     contenido: d.text().notNull(),
     saved_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-    // opcional: referencia a usuario/autor si se requiere en el futuro
     created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
   }),
   (t) => [index("pre_egresos_patient_idx").on(t.patient_id)]
+);
+
+// NEW: tabla para epicrisis (almacenamos JSON como text por ahora)
+export const epicrisis = createTable(
+  "epicrisis",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    patient_id: d.integer().notNull().references(() => patients.id),
+    epicrisis_text: d.text().notNull(), // JSON serializado
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updated_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("epicrisis_patient_idx").on(t.patient_id)]
 );

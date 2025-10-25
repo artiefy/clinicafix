@@ -7,11 +7,12 @@ import { useUser } from "@clerk/nextjs";
 import { AiOutlineCheckCircle } from "react-icons/ai";
 import { FaStethoscope, FaUserInjured } from "react-icons/fa";
 import { IoExitOutline } from "react-icons/io5";
-import { MdMedicalServices, MdOutlineCleaningServices } from "react-icons/md";
+import { MdMedicalServices, MdOutlineCleaningServices, MdOutlineTimer } from "react-icons/md";
 import { RiCloseCircleLine } from "react-icons/ri";
 import { RiDoorOpenLine } from "react-icons/ri";
 import useSWR, { useSWRConfig } from "swr";
 
+import EpicrisisModal from "@/components/EpicrisisModal";
 import { showToast } from "@/components/toastService";
 import { AuxBedStatus, Bed, Discharge, Patient, Procedure, Room } from "@/types"; // <-- añadí Discharge + Procedure
 import { Roles } from "@/types/globals";
@@ -162,7 +163,7 @@ export default function BedSwapBoard() {
   }>({});
 
   // Nuevo: estado para tab activo en el modal de paciente
-  const [profileTab, setProfileTab] = useState<"perfil" | "diagnostico" | "procedimientos" | "pre-egreso">("perfil");
+  const [profileTab, setProfileTab] = useState<"perfil" | "diagnostico" | "procedimientos" | "pre-egreso" | "epicrisis">("perfil");
 
   // --- NUEVO: compute resolved patient and permitted tabs for profile modal (hooks at top-level) ---
   const profileResolved = React.useMemo(() => {
@@ -171,17 +172,28 @@ export default function BedSwapBoard() {
 
   const profileEff = React.useMemo(() => getPatientEffectiveStatus(profileResolved ?? undefined), [profileResolved]);
 
-  const showProfileOnly = profileEff === "sin cama" || profileEff === "con cama" || profileEff === "";
   const showDiagAndProc = profileEff === "diagnosticos_procedimientos";
   const showAllForPreEgreso = profileEff === "pre-egreso";
 
+  // Derivadas para render (combinan con || para evitar advertencias en JSX)
+  const showDiagOrProc = showDiagAndProc || showAllForPreEgreso;
+  const showProcOrPre = showDiagAndProc || showAllForPreEgreso;
+
   // Ensure active tab is valid whenever effective status changes
   useEffect(() => {
-    if (showProfileOnly && profileTab !== "perfil") setProfileTab("perfil");
-    if (!showDiagAndProc && profileTab === "diagnostico") setProfileTab("perfil");
-    if (!showDiagAndProc && profileTab === "procedimientos") setProfileTab("perfil");
-    if (!showAllForPreEgreso && profileTab === "pre-egreso") setProfileTab("perfil");
-  }, [showProfileOnly, showDiagAndProc, showAllForPreEgreso, profileTab]); // added profileTab to satisfy eslint
+    // don't override user selection while profile is still resolving / loading
+    if (profileResolved == null) return;
+
+    const eff = getPatientEffectiveStatus(profileResolved);
+    const shouldShowProfileOnly = eff === "sin cama" || eff === "con cama" || eff === "";
+    const shouldShowDiagAndProc = eff === "diagnosticos_procedimientos";
+    const shouldShowAllForPreEgreso = eff === "pre-egreso";
+
+    if (shouldShowProfileOnly && profileTab !== "perfil") setProfileTab("perfil");
+    if (!shouldShowDiagAndProc && !shouldShowAllForPreEgreso && profileTab === "diagnostico") setProfileTab("perfil");
+    if (!shouldShowDiagAndProc && !shouldShowAllForPreEgreso && profileTab === "procedimientos") setProfileTab("perfil");
+    if (!shouldShowAllForPreEgreso && profileTab === "pre-egreso") setProfileTab("perfil");
+  }, [profileResolved, profileTab]);
 
   const openProfile = useCallback(
     async (patientId: number) => {
@@ -555,6 +567,39 @@ export default function BedSwapBoard() {
     if (p.diagnostico && String(p.diagnostico).trim() !== "") parts.push(String(p.diagnostico).trim());
     if (p.procedimiento && String(p.procedimiento).trim() !== "") parts.push(String(p.procedimiento).trim());
     return parts.length > 0 ? parts.join(" | ") : "—";
+  }
+
+  // --- NEW: format duration human readable (h m) ---
+  function formatDurationHuman(ms: number | null | undefined) {
+    if (!ms || !Number.isFinite(ms) || ms <= 0) return "—";
+    const totalMin = Math.floor(ms / 60000);
+    const hours = Math.floor(totalMin / 60);
+    const mins = totalMin % 60;
+    if (hours <= 0) return `${mins}m`;
+    return `${hours}h ${mins}m`;
+  }
+
+  // --- NEW: devuelve los 3 tiempos a mostrar para un paciente dado ---
+  // estancia: desde la timestamp de la cama asignada (beds[].last_update) hasta ahora
+  // calculado: estancia + 15 min (placeholder para IA)
+  // estimado: estancia + 30 min (placeholder para IA)
+  function getPatientTimes(patientId?: number | null) {
+    if (!patientId) return null;
+    const patient = patients.find((p) => p.id === patientId);
+    if (!patient) return null;
+    const bed = typeof patient.bed_id === "number" ? beds.find((b) => b.id === patient.bed_id) : undefined;
+    const start = bed?.last_update ? new Date(bed.last_update) : null;
+    if (!start || Number.isNaN(start.getTime())) return null;
+    const now = new Date();
+    const estanciaMs = Math.max(0, now.getTime() - start.getTime());
+    const calculadoMs = estanciaMs + 15 * 60 * 1000; // +15 min placeholder
+    const estimadoMs = estanciaMs + 30 * 60 * 1000; // +30 min placeholder
+    return {
+      estanciaMs,
+      estanciaStr: formatDurationHuman(estanciaMs),
+      calculadoStr: formatDurationHuman(calculadoMs),
+      estimadoStr: formatDurationHuman(estimadoMs),
+    };
   }
 
   // helpers that operate by ids (invocables desde Pragmatic callbacks)
@@ -1434,7 +1479,7 @@ export default function BedSwapBoard() {
                     >
                       <button
                         type="button"
-                        className="bg-white font-bold text-left w-full text-black hover:underline mt-2"
+                        className="bg-white font-bold text-left w-full text-black hover:underline mt-2 pr-10 break-words whitespace-normal"
                         onClick={() => openProfile(p.id)}
                       >
                         {p.name}
@@ -1444,7 +1489,7 @@ export default function BedSwapBoard() {
                         Hora de Ingreso: {p.estimated_time ? to12HourWithDateShort(p.estimated_time) : "—"}
                       </div>
 
-                      <div className="absolute top-2 right-2 text-xl text-gray-700 opacity-90 pointer-events-none">
+                      <div className="absolute top-2 right-3 text-xl text-gray-700 opacity-90 pointer-events-none">
                         <FaUserInjured />
                       </div>
                     </div>
@@ -1500,8 +1545,29 @@ export default function BedSwapBoard() {
                             >
                               {assigned.name}
                             </button>
+
+                            {/* ICONA: timer entre el nombre y los tiempos */}
+                            <div className="mt-1 flex items-center gap-2 text-gray-600">
+                              <MdOutlineTimer className="text-lg" />
+                              {/* los tiempos siguen abajo */}
+                            </div>
+
+                            {/* NEW: tiempos bajo el nombre */}
+                            {(() => {
+                              const times = getPatientTimes(assigned.id);
+                              return times ? (
+                                <div className="text-xs text-gray-600 mt-2 space-y-0.5">
+                                  <div>Estancia: <strong className="text-black">{times.estanciaStr}</strong></div>
+                                  <div>Calculado: <strong className="text-black">{times.calculadoStr}</strong></div>
+                                  <div>Estimado: <strong className="text-black">{times.estimadoStr}</strong></div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-gray-500 mt-2">Estancia: —</div>
+                              );
+                            })()}
                           </div>
                         ) : (
+
                           "Sin paciente"
                         )}
                       </div>
@@ -1552,6 +1618,25 @@ export default function BedSwapBoard() {
                             >
                               {assigned.name}
                             </button>
+
+                            {/* ICONA: timer */}
+                            <div className="mt-1 flex items-center gap-2 text-gray-600">
+                              <MdOutlineTimer className="text-lg" />
+                            </div>
+
+                            {/* NEW: tiempos bajo el nombre */}
+                            {(() => {
+                              const times = getPatientTimes(assigned.id);
+                              return times ? (
+                                <div className="text-xs text-gray-600 mt-2 space-y-0.5">
+                                  <div>Estancia: <strong className="text-black">{times.estanciaStr}</strong></div>
+                                  <div>Calculado: <strong className="text-black">{times.calculadoStr}</strong></div>
+                                  <div>Estimado: <strong className="text-black">{times.estimadoStr}</strong></div>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-gray-500 mt-2">Estancia: —</div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="mt-2 meta">Sin paciente</div>
@@ -1598,6 +1683,25 @@ export default function BedSwapBoard() {
                           >
                             {assigned.name}
                           </button>
+
+                          {/* ICONA: timer */}
+                          <div className="mt-1 flex items-center gap-2 text-gray-600">
+                            <MdOutlineTimer className="text-lg" />
+                          </div>
+
+                          {/* NEW: tiempos bajo el nombre */}
+                          {(() => {
+                            const times = getPatientTimes(assigned.id);
+                            return times ? (
+                              <div className="text-xs text-gray-600 mt-2 space-y-0.5">
+                                <div>Estancia: <strong className="text-black">{times.estanciaStr}</strong></div>
+                                <div>Calculado: <strong className="text-black">{times.calculadoStr}</strong></div>
+                                <div>Estimado: <strong className="text-black">{times.estimadoStr}</strong></div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-2">Estancia: —</div>
+                            );
+                          })()}
                         </div>
                       ) : null}
                       <div className="absolute top-2 right-2 text-2xl text-blue-600 opacity-90 pointer-events-none">
@@ -1645,6 +1749,25 @@ export default function BedSwapBoard() {
                           >
                             {assigned.name}
                           </button>
+
+                          {/* ICONA: timer */}
+                          <div className="mt-1 flex items-center gap-2 text-gray-600">
+                            <MdOutlineTimer className="text-lg" />
+                          </div>
+
+                          {/* NEW: tiempos bajo el nombre */}
+                          {(() => {
+                            const times = getPatientTimes(assigned.id);
+                            return times ? (
+                              <div className="text-xs text-gray-600 mt-2 space-y-0.5">
+                                <div>Estancia: <strong className="text-black">{times.estanciaStr}</strong></div>
+                                <div>Calculado: <strong className="text-black">{times.calculadoStr}</strong></div>
+                                <div>Estimado: <strong className="text-black">{times.estimadoStr}</strong></div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-500 mt-2">Estancia: —</div>
+                            );
+                          })()}
                         </div>
                       ) : null}
                       <div className="absolute top-2 right-2 text-2xl text-amber-600 opacity-90 pointer-events-none">
@@ -1956,7 +2079,7 @@ export default function BedSwapBoard() {
         openProfileFor !== null && (
           <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
-            <div className="relative bg-white text-black rounded p-4 w-full max-w-2xl z-70">
+            <div className="relative bg-white text-black rounded p-4 w-full max-w-4xl z-70">
               {/* Close X */}
               <button
                 type="button"
@@ -1977,16 +2100,16 @@ export default function BedSwapBoard() {
                   Perfil paciente
                 </button>
 
-                {(showDiagAndProc || showAllForPreEgreso) && (
+                {showDiagOrProc && (
                   <button
-                    className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-400"}`}
+                    className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-200"}`}
                     onClick={() => setProfileTab("diagnostico")}
                   >
                     Diagnóstico
                   </button>
                 )}
 
-                {(showDiagAndProc || showAllForPreEgreso) && (
+                {showProcOrPre && (
                   <button
                     className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
                     onClick={() => {
@@ -2004,6 +2127,16 @@ export default function BedSwapBoard() {
                     onClick={() => setProfileTab("pre-egreso")}
                   >
                     Pre-egreso
+                  </button>
+                )}
+
+                {/* NEW: Epicrisis tab - visible desde Atención Médica en adelante (no para 'sin cama') */}
+                {profileEff !== "sin cama" && (
+                  <button
+                    className={`px-4 py-1 rounded font-semibold ${profileTab === "epicrisis" ? "bg-pink-600 text-white" : "bg-gray-200"}`}
+                    onClick={() => setProfileTab("epicrisis")}
+                  >
+                    Epicrisis
                   </button>
                 )}
               </div>
@@ -2109,7 +2242,7 @@ export default function BedSwapBoard() {
               )}
 
               {/* Diagnóstico: sólo si está permitido */}
-              {profileTab === "diagnostico" && (showDiagAndProc || showAllForPreEgreso) && (
+              {profileTab === "diagnostico" && showDiagOrProc && (
                 <div>
                   <h3 className="font-bold mb-2">Diagnóstico</h3>
                   <div className="text-xs text-gray-600 mb-2">
@@ -2140,7 +2273,7 @@ export default function BedSwapBoard() {
               )}
 
               {/* Procedimientos: sólo si está permitido */}
-              {profileTab === "procedimientos" && (showDiagAndProc || showAllForPreEgreso) && (
+              {profileTab === "procedimientos" && showProcOrPre && (
                 <div>
                   <h3 className="font-bold mb-2">Procedimientos</h3>
                   <div className="space-y-2 max-h-[40vh] overflow-y-auto">
@@ -2286,6 +2419,24 @@ export default function BedSwapBoard() {
                   )}
                 </div>
               )}
+
+              {/* Insert Epicrisis modal component (se abre dentro del modal de perfil) */}
+              {profileTab === "epicrisis" && (
+                <div className="mt-4">
+                  <EpicrisisModal
+                    inline
+                    patientId={openProfileFor}
+                    open={Boolean(openProfileFor)}
+                    onCloseAction={() => setProfileTab("perfil")}
+                    onSavedAction={() => {
+                      void mutate("/api/patients");
+                      void mutate("/api/epicrisis");
+                      setProfileTab("perfil");
+                    }}
+                  />
+                </div>
+              )}
+
             </div>
           </div>
         )
