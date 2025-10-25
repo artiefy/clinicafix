@@ -185,7 +185,11 @@ export default function BedSwapBoard() {
     if (profileResolved == null) return;
 
     const eff = getPatientEffectiveStatus(profileResolved);
-    const shouldShowProfileOnly = eff === "sin cama" || eff === "con cama" || eff === "";
+    // Only force "perfil" for patients without a bed (admisiones) or when unknown.
+    // Do NOT include "con cama" here so Epicrisis / Diagnóstico / Procedimientos can be selected
+    // for patients in Atención Médica.
+    const shouldShowProfileOnly = eff === "sin cama" || eff === "";
+
     const shouldShowDiagAndProc = eff === "diagnosticos_procedimientos";
     const shouldShowAllForPreEgreso = eff === "pre-egreso";
 
