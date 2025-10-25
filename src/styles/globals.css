@@ -640,3 +640,58 @@ select:focus,
     }
   }
 }
+
+/* Forzar color de texto negro al escribir en inputs de login (email y password).
+   Mantener placeholders en gris claro y compatibilidad con Clerk wrappers y autofill. */
+input[type="email"],
+input[type="password"],
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="email"]:active,
+input[type="password"]:active,
+input[type="email"]:hover,
+input[type="password"]:hover {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  outline: none !important;
+  color: #111827 !important; /* texto negro al escribir */
+}
+
+/* Placeholders: mantener gris (visualmente igual que antes) */
+input::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder,
+.clerk-input input::placeholder {
+  color: #9ca3af !important; /* gray-400 */
+  opacity: 1 !important;
+}
+
+/* Autofill: asegurar que el texto autocompletado se muestre en negro */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827 !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+  background-color: transparent !important;
+  box-shadow: 0 0 0px 1000px transparent inset !important;
+  -webkit-box-shadow: 0 0 0px 1000px transparent inset !important;
+  outline: none !important;
+}
+
+/* Clerk wrappers: asegurar color en inputs renderizados por Clerk */
+.clerk-input input,
+.clerk-input input:-webkit-autofill,
+.clerk-input input:-moz-autofill,
+input.clerk-input,
+input.clerk-input:-webkit-autofill,
+input.clerk-input:-moz-autofill {
+  color: #111827 !important;
+  -webkit-text-fill-color: #111827 !important;
+  background-color: transparent !important;
+}
