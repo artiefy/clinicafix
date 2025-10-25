@@ -8,9 +8,11 @@ export default function CleaningAlerts() {
   const list = alerts ?? [];
 
   return (
-    <section className="bg-white/10 rounded-xl p-6 text-white shadow">
-      <h3 className="text-xl font-bold mb-4">Alertas de Limpieza</h3>
-      <div className="text-sm text-gray-200">Total alertas: {list.length}</div>
+    <section className="card">
+      <h3 className="card-title">Alertas de Limpieza</h3>
+      <div className="card-subtitle">
+        Total alertas: <strong>{list.length}</strong>
+      </div>
     </section>
   );
 }

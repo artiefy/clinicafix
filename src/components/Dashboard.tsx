@@ -44,8 +44,8 @@ export default function Dashboard() {
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4">
-      <h2 className="text-xl font-bold mb-4">Estado de Camas desde la base de datos</h2>
-      <div className="overflow-hidden rounded shadow">
+      <h2 className="card-title">Estado de Camas desde la base de datos</h2>
+      <div className="overflow-hidden rounded table-card">
         <table className="w-full bg-white text-black table-auto">
           <thead className="bg-gray-50">
             <tr>

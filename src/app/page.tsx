@@ -2,9 +2,7 @@ import React from "react";
 
 import BedStatusBoard from "@/components/BedStatusBoard";
 import BedSwapBoard from "@/components/BedSwapBoard";
-import CleaningAlerts from "@/components/CleaningAlerts";
 import EgressTracker from "@/components/EgressTracker";
-import PredictivePanel from "@/components/PredictivePanel";
 import ProtectedDashboard from "@/components/ProtectedDashboard";
 
 export default function HomePage() {
@@ -17,16 +15,6 @@ export default function HomePage() {
             <BedSwapBoard />
           </section>
         </ProtectedDashboard>
-
-        {/* Middle: two columns (predictive + alerts) */}
-        <section className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <PredictivePanel />
-          </div>
-          <div>
-            <CleaningAlerts />
-          </div>
-        </section>
 
         {/* Egress Tracker: full-width single row below the two panels */}
         <section className="w-full">

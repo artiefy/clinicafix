@@ -8,11 +8,15 @@ export default function PredictivePanel() {
   const preds = predictions ?? [];
 
   return (
-    <section className="bg-white/10 rounded-xl p-6 text-white shadow">
-      <h3 className="text-xl font-bold mb-4">Analítica Predictiva</h3>
-      {preds.map((pred) => (
-        <p key={pred.id}>{pred.description}</p>
-      ))}
+    <section className="card">
+      <h3 className="card-title">Analítica Predictiva</h3>
+      <div className="text-white">
+        {preds.map((pred) => (
+          <p key={pred.id} className="mb-2">
+            {pred.description}
+          </p>
+        ))}
+      </div>
     </section>
   );
 }

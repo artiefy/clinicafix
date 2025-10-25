@@ -25,7 +25,7 @@ export default function Toasts() {
     return (
         <div aria-live="polite" className="fixed top-4 right-4 z-50 flex flex-col gap-3">
             {list.map((t) => (
-                <div key={t.id} className={`max-w-sm w-full text-white rounded-lg shadow-lg overflow-hidden ${colorFor(t.type)} ring-1 ring-black/20`}>
+                <div key={t.id} className={`max-w-sm w-full rounded-lg overflow-hidden ${colorFor(t.type)} ring-1 ring-black/20 card-item`}>
                     <div className="px-4 py-3">
                         <div className="font-semibold">{t.title}</div>
                         {t.description ? <div className="text-sm mt-1 opacity-90">{t.description}</div> : null}

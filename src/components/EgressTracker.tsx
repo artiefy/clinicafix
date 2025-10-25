@@ -2,7 +2,7 @@
 import useSWR from "swr";
 
 import { Bed, Discharge, Patient, Room } from "@/types";
-import { to12HourWithDate } from "@/utils/time";
+import { to12HourWithDate, to12HourWithDateShort } from "@/utils/time";
 
 export default function EgressTracker() {
   const { data: discharges } = useSWR<Discharge[]>("/api/discharges");
@@ -56,10 +56,10 @@ export default function EgressTracker() {
   };
 
   return (
-    <section className="bg-white/10 rounded-xl p-6 text-white shadow">
-      <h3 className="text-xl font-bold mb-4">Salidas De Pacientes</h3>
+    <section className="card">
+      <h3 className="card-title">Salidas De Pacientes</h3>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto table-card">
         <table className="w-full table-fixed min-w-[800px] text-left text-sm text-black">
           <colgroup>
             <col style={{ width: "6%" }} />
@@ -94,7 +94,8 @@ export default function EgressTracker() {
                   <td className="px-2 py-1 text-xs">{discharge.bed_id}</td>
                   <td className="px-2 py-1 text-xs">{getRoomNumberForBed(discharge.bed_id)}</td>
                   <td className="px-2 py-1">{adm ? to12HourWithDate(adm) : "—"}</td>
-                  <td className="px-2 py-1">{out ? to12HourWithDate(out) : "—"}</td>
+                  {/* Mostrar sin el prefijo 'ultimo:' */}
+                  <td className="px-2 py-1">{adm ? to12HourWithDateShort(adm) : "—"}</td>
                   <td className="px-2 py-1 whitespace-nowrap">{durMs > 0 ? formatDuration(durMs) : "—"}</td>
                 </tr>
               );

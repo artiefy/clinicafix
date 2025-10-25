@@ -4,13 +4,18 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element/adapter";
 import { useUser } from "@clerk/nextjs";
+import { AiOutlineCheckCircle } from "react-icons/ai";
+import { FaStethoscope } from "react-icons/fa";
+import { IoExitOutline } from "react-icons/io5";
+import { MdMedicalServices } from "react-icons/md";
 import { RiCloseCircleLine } from "react-icons/ri";
+import { RiDoorOpenLine } from "react-icons/ri";
 import useSWR, { useSWRConfig } from "swr";
 
 import { showToast } from "@/components/toastService";
 import { AuxBedStatus, Bed, Discharge, Patient, Procedure, Room } from "@/types"; // <-- añadí Discharge + Procedure
 import { Roles } from "@/types/globals";
-import { to12HourWithDate } from "@/utils/time"; // <-- nuevo import (se añade to12Hour)
+import { to12HourWithDate, to12HourWithDateShort } from "@/utils/time"; // <-- nuevo import (short variant)
 
 function formatDate(date: Date | string | null | undefined) {
   // reutilizamos util consistente que devuelve "YYYY-MM-DD h:mm AM/PM"
@@ -1364,20 +1369,20 @@ export default function BedSwapBoard() {
 
   // Render: remove native drag event attributes; add data-attrs for Pragmatic
   return (
-    // forzar texto oscuro en todo el gestor (tableros y tarjetas)
-    <div className="text-black">
-      <h3 className="text-2xl text-center font-bold mb-4">Gestión de Pacientes y Camas</h3>
+    // tarjeta principal del gestor
+    <div className="card">
+      <h3 className="card-title text-center">GESTIÓN DE PACIENTES Y CAMAS</h3>
       <div className="w-full max-w-full">
         {/* Cambiado: usar flex con overflow-x-auto para móviles, manteniendo grid en desktop */}
         <div className="md:grid md:grid-cols-7 md:gap-4 md:w-full flex overflow-x-auto gap-4 w-full p-4">
           {/* Column: Admisiones */}
           {canViewColumn("sin cama") && (
             <div
-              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col"
+              className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("sin cama") ? "ring-2 ring-sky-400" : ""}`}
               data-drop-column="sin cama"
             >
-              <h4 className="font-semibold mb-2 text-center">
-                Admisiones  {unassignedPatients.length}
+              <h4 className="uppercase font-extrabold mb-2 text-center">
+                ADMISIONES {unassignedPatients.length}
               </h4>
               <div className="flex-1">
                 {/* placeholder para mini-tarjeta: igual que en columna "de alta" */}
@@ -1394,18 +1399,18 @@ export default function BedSwapBoard() {
                     <div
                       key={p.id}
                       data-draggable-patient={String(p.id)}
-                      className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-300 ease-in-out transform-gpu text-white"
+                      className="bg-white card-item transition-all duration-300 ease-in-out transform-gpu"
                     >
                       <button
                         type="button"
-                        className="font-bold text-left w-full text-inherit hover:underline"
+                        className="bg-white font-bold text-left w-full text-black hover:underline"
                         onClick={() => openProfile(p.id)}
                       >
                         {p.name}
                       </button>
                       {/* Mostrar fecha y hora completa de ingreso si existe */}
-                      <div className="text-xs">
-                        Fecha y hora de ingreso: {p.estimated_time ? to12HourWithDate(p.estimated_time) : "—"}
+                      <div className="meta">
+                        Hora de Ingreso: {p.estimated_time ? to12HourWithDateShort(p.estimated_time) : "—"}
                       </div>
                     </div>
                   ))
@@ -1416,10 +1421,10 @@ export default function BedSwapBoard() {
           {/* Column: Camas disponibles */}
           {canViewColumn("Disponible") && (
             <div
-              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px]"
+              className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] ${allowedColumns.includes("Disponible") ? "ring-2 ring-sky-400" : ""}`}
               data-drop-column="Disponible"
             >
-              <h4 className="font-semibold mb-2 text-center">Camas disponibles</h4>
+              <h4 className="uppercase font-extrabold mb-2 text-center">CAMAS DISPONIBLES</h4>
               <div className="flex-1">
                 {/* Placeholder de paciente (preview shadow) cuando se arrastra una tarjeta de paciente */}
                 {allowedColumns.includes("Disponible") && hoverStatus === "Disponible" && placeholderHeight ? (
@@ -1438,28 +1443,46 @@ export default function BedSwapBoard() {
                 {statusGroups.Disponible.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
                   const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
-                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}` || _highlightBedId === bed.id;
                   return (
                     <div
                       key={bed.id}
-                      data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient ? String(bed.id) : undefined}
+                      // permitir arrastrar camas siempre que no sean "Atención Médica" y no tengan paciente activo
+                      data-draggable-bed={!hasActivePatient && bed.status !== "Atención Médica" ? String(bed.id) : undefined}
                       data-drop-bed={String(bed.id)}
-                      className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} ${bed.status === "Disponible" ? "bg-green-600/10 border-l-4 border-green-600" : ""}`}
+                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-green-600 bg-green-100/80`}
                     >
-                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
-                      <div className="mt-2 text-sm text-gray-300">{assigned ? assigned.name : "Sin paciente"}</div>
+                      <div className="font-bold">CAMA {bed.id}</div>
+                      <div className="text-sm mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
+                      <div className="meta">{formatDate(bed.last_update)}</div>
+                      <div className="mt-2 meta">
+                        {assigned ? (
+                          <div className="mt-2 p-2 rounded bg-red-200/90">
+                            <button
+                              type="button"
+                              className="font-medium text-left w-full text-red-800 hover:underline"
+                              onClick={() => openProfile(assigned.id)}
+                            >
+                              {assigned.name}
+                            </button>
+                          </div>
+                        ) : (
+                          "Sin paciente"
+                        )}
+                      </div>
+                      <div className="absolute top-2 right-2 text-2xl text-green-600 opacity-90 pointer-events-none">
+                        <AiOutlineCheckCircle />
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
-
           {/* Column: Atención médica (camas ocupadas) */}
           {canViewColumn("Ocupada") && (
-            <div className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="Ocupada">
-              <h4 className="font-semibold mb-2 text-center">Atención Médica</h4>
+            <div className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("Ocupada") ? "ring-2 ring-sky-400" : ""}`} data-drop-column="Ocupada">
+              <h4 className="uppercase font-extrabold mb-2 text-center">ATENCIÓN MÉDICA</h4>
               <div className="flex-1">
                 {/* Placeholder de paciente cuando se arrastra una tarjeta (ej. desde Diagnóstico) hacia Atención Médica */}
                 {allowedColumns.includes("Ocupada") && hoverStatus === "Ocupada" && placeholderHeight ? (
@@ -1468,48 +1491,49 @@ export default function BedSwapBoard() {
                     style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
                   />
                 ) : null}
-                {statusGroups["Atención Médica"] // cambiado de Ocupada a Atención Médica
+                {statusGroups["Atención Médica"]
                   .filter((bed) => {
                     const assigned = patients.find((p) => p.bed_id === bed.id);
-                    // Excluir camas donde el paciente esté en "diagnosticos_procedimientos" O "pre-egreso" para evitar duplicación
                     return !assigned || (getPatientEffectiveStatus(assigned) !== "diagnosticos_procedimientos" && getPatientEffectiveStatus(assigned) !== "pre-egreso");
                   })
                   .map((bed) => {
                     const assigned = patients.find((p) => p.bed_id === bed.id);
-                    const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                    const isBedHighlight = hoverStatus === `bed-${bed.id}` || _highlightBedId === bed.id;
                     return (
-                      // SOLO el contenedor grande es draggable cuando hay paciente asignado
                       <div
                         key={bed.id}
                         data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                        className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-red-600/10 border-l-4 border-red-600`}
+                        className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-red-600 bg-red-100/80`}
                       >
-                        <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                        <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                        <div className="font-bold">CAMA {bed.id}</div>
+                        <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
+                        <div className="meta">{formatDate(bed.last_update)}</div>
                         {assigned ? (
-                          <div className="mt-2 bg-white/5 p-2 rounded">
+                          <div className="mt-2 p-2 rounded bg-red-200/90">
                             <button
                               type="button"
-                              className="font-medium text-left w-full text-inherit hover:underline"
+                              className="font-medium text-left w-full text-red-800 hover:underline"
                               onClick={() => openProfile(assigned.id)}
                             >
                               {assigned.name}
                             </button>
                           </div>
                         ) : (
-                          <div className="mt-2 text-sm text-gray-300">Sin paciente</div>
+                          <div className="mt-2 meta">Sin paciente</div>
                         )}
+                        <div className="absolute right-2 text-2xl text-red-600 opacity-90 pointer-events-none top-2">
+                          <FaStethoscope />
+                        </div>
                       </div>
                     );
                   })}
               </div>
             </div>
           )}
-
           {/* Columna: Procedimiento (Diagnóstico / Proced.) */}
           {canViewColumn("diagnosticos_procedimientos") && (
-            <div className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="diagnosticos_procedimientos">
-              <h4 className="font-semibold mb-2 text-center">Diagnóstico / Proced.</h4>
+            <div className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("diagnosticos_procedimientos") ? "ring-2 ring-sky-400" : ""}`} data-drop-column="diagnosticos_procedimientos">
+              <h4 className="uppercase font-extrabold mb-2 text-center">DIAGNÓSTICO / PROCED.</h4>
               <div className="flex-1">
                 {/* Placeholder para sombra preview cuando se hoverea (sólo si la columna está permitida) */}
                 {allowedColumns.includes("diagnosticos_procedimientos") && hoverStatus === "diagnosticos_procedimientos" ? (
@@ -1520,40 +1544,43 @@ export default function BedSwapBoard() {
                 ) : null}
                 {diagnosticBeds.length > 0 ? diagnosticBeds.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
-                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}` || _highlightBedId === bed.id;
                   return (
                     <div
                       key={bed.id}
                       data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                      className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-blue-600/10 border-l-4 border-blue-600`}
+                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-blue-600 bg-blue-100/80`}
                     >
-                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                      <div className="font-bold">CAMA {bed.id}</div>
+                      <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
+                      <div className="meta">{formatDate(bed.last_update)}</div>
                       {assigned ? (
-                        <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                        <div className="mt-2 p-2 rounded flex flex-col gap-2 bg-blue-200/90">
                           <button
                             type="button"
-                            className="font-medium mb-1 text-left w-full text-inherit hover:underline"
+                            className="font-medium mb-1 text-left w-full text-blue-800 hover:underline"
                             onClick={() => openProfile(assigned.id)}
                           >
                             {assigned.name}
                           </button>
                         </div>
                       ) : null}
+                      <div className="absolute top-2 right-2 text-2xl text-blue-600 opacity-90 pointer-events-none">
+                        <MdMedicalServices />
+                      </div>
                     </div>
                   );
                 }) : null}
               </div>
             </div>
           )}
-
-          {/* Columna: Pre Egreso (pre-egreso) - mostrar tarjetas completas (cama + paciente) */}
+          {/* Columna: Pre Egreso (pre-egreso) */}
           {canViewColumn("pre-egreso") && (
             <div
-              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col"
+              className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("pre-egreso") ? "ring-2 ring-sky-400" : ""}`}
               data-drop-column="pre-egreso"
             >
-              <h4 className="font-semibold mb-2 text-center">Pre-egreso</h4>
+              <h4 className="uppercase font-extrabold mb-2 text-center">PRE-EGRESO</h4>
               <div className="flex-1">
                 {/* Placeholder / sombra preview — solo si la columna está permitida en este drag */}
                 {allowedColumns.includes("pre-egreso") && hoverStatus === "pre-egreso" ? (
@@ -1564,37 +1591,40 @@ export default function BedSwapBoard() {
                 ) : null}
                 {preEgresoBeds.length > 0 ? preEgresoBeds.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
-                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}` || _highlightBedId === bed.id;
                   return (
                     <div
                       key={bed.id}
                       data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                      className={`mb-2 rounded shadow p-2 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""} bg-amber-600/10 border-l-4 border-amber-600`}
+                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-amber-600 bg-amber-100/80`}
                     >
-                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                      <div className="font-bold">CAMA {bed.id}</div>
+                      <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
+                      <div className="meta">{formatDate(bed.last_update)}</div>
                       {assigned ? (
-                        <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
+                        <div className="mt-2 p-2 rounded flex flex-col gap-2 bg-amber-200/90">
                           <button
                             type="button"
-                            className="font-medium mb-1 text-left w-full text-inherit hover:underline"
+                            className="font-medium mb-1 text-left w-full text-amber-800 hover:underline"
                             onClick={() => openProfile(assigned.id)}
                           >
                             {assigned.name}
                           </button>
                         </div>
                       ) : null}
+                      <div className="absolute top-2 right-2 text-2xl text-amber-600 opacity-90 pointer-events-none">
+                        <IoExitOutline />
+                      </div>
                     </div>
                   );
                 }) : null}
               </div>
             </div>
           )}
-
           {/* Columna: Egreso (pacientes dados de alta) */}
           {canViewColumn("de alta") && (
-            <div className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col" data-drop-column="de alta">
-              <h4 className="font-semibold mb-2 text-center">Egreso</h4>
+            <div className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("de alta") ? "ring-2 ring-sky-400" : ""}`} data-drop-column="de alta">
+              <h4 className="uppercase font-extrabold mb-2 text-center">EGRESO</h4>
               <div className="flex-1">
                 {/* Placeholder: use same color & padding as patient cards and match dragged rect height */}
                 {allowedColumns.includes("de alta") && hoverStatus === "de alta" ? (
@@ -1604,34 +1634,36 @@ export default function BedSwapBoard() {
                   />
                 ) : null}
                 {dischargedPatients.map((p: Patient & { discharge_time?: string | null }) => (
-                  <div key={p.id} className="mb-2 bg-white/20 rounded shadow p-2 text-white">
+                  <div key={p.id} className="card-item relative bg-teal-100/80 border-l-4 border-teal-600">
                     <button
                       type="button"
-                      className="font-bold text-left w-full text-inherit hover:underline"
+                      className="font-bold text-left w-full text-teal-800 hover:underline"
                       onClick={() => openProfile(p.id)}
                     >
                       {p.name}
                     </button>
-                    <div className="text-xs">Hora de salida: {p.discharge_time ? to12HourWithDate(p.discharge_time) : "—"}</div>
-                    {/* actions + history view */}
+                    {/* Usar formato corto (sin 'ultimo:') */}
+                    <div className="meta">Hora de salida: {p.discharge_time ? to12HourWithDateShort(p.discharge_time) : "—"}</div>
                     <div className="mt-2 bg-white/5 p-2 rounded flex flex-col gap-2">
                       <div className="flex flex-col gap-2">
                         {/* Eliminar los botones de diagnóstico/procedimientos aquí */}
                       </div>
+                    </div>
+                    <div className="absolute top-2 right-2 text-2xl text-teal-600 opacity-90 pointer-events-none">
+                      <RiDoorOpenLine />
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
           {/* Columna final: Limpieza */}
           {canViewColumn("Limpieza") && (
             <div
-              className="flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-white/10 rounded-lg p-4 min-h-[220px] flex flex-col"
+              className={`flex-shrink-0 w-64 md:flex-shrink md:w-auto bg-gray-200 rounded-lg p-4 min-h-[220px] flex flex-col ${allowedColumns.includes("Limpieza") ? "ring-2 ring-sky-400" : ""}`}
               data-drop-column="Limpieza"
             >
-              <h4 className="font-semibold mb-2 text-center">Limpieza</h4>
+              <h4 className="uppercase font-extrabold mb-2 text-center">LIMPIEZA</h4>
               <div className="flex-1">
                 {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Limpieza (sólo si está permitido) */}
                 {allowedColumns.includes("Limpieza") && hoverStatus === "Limpieza" && _bedPlaceholder?.status === "Limpieza" ? (
@@ -1643,18 +1675,20 @@ export default function BedSwapBoard() {
                 {statusGroups.Limpieza.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
                   const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
-                  const isBedHighlight = hoverStatus === `bed-${bed.id}`;
+                  const isBedHighlight = hoverStatus === `bed-${bed.id}` || _highlightBedId === bed.id;
                   // compute CSS variable object without using `any`
                   const selectStyle = ({ ['--select-bg']: auxStatusColor(bed.aux_status ?? "Limpieza") } as unknown) as React.CSSProperties;
                   return (
                     <div
                       key={bed.id}
-                      data-draggable-bed={bed.status !== "Atención Médica" && !hasActivePatient && (bed.status !== "Limpieza" || bed.aux_status === "Limpieza") ? String(bed.id) : undefined}
+                      // permitir arrastrar camas en Limpieza hacia Disponible si no tienen paciente activo y no son Atención Médica
+                      data-draggable-bed={!hasActivePatient && bed.status !== "Atención Médica" ? String(bed.id) : undefined}
                       data-drop-bed={String(bed.id)}
-                      className={`mb-2 rounded shadow p-2 bg-yellow-500/10 border-l-4 border-yellow-500 text-white ${isBedHighlight ? "ring-2 ring-sky-400 bg-sky-900/30" : ""}`}
+                      className={`card-item ${isBedHighlight ? "ring-2 ring-sky-400" : ""} bg-yellow-50 border-l-4 border-yellow-500`}
                     >
-                      <div className="font-bold">Cama {bed.id} - Hab. {getRoomNumber(bed.room_id)}</div>
-                      <div className="text-xs">Última actualización: {formatDate(bed.last_update)}</div>
+                      <div className="font-bold">CAMA {bed.id}</div>
+                      <div className="text-md text-gray-700 mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
+                      <div className="meta">{formatDate(bed.last_update)}</div>
 
                       {/* Select only visible in Limpieza column to set aux_status */}
                       <div className="mt-2">
@@ -1698,179 +1732,183 @@ export default function BedSwapBoard() {
 
       {/* Modales (render fuera del flujo de columnas, al final del componente) */}
       {/* Diagnosis modal */}
-      {openDiagFor !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setOpenDiagFor(null)} />
-          <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
-            {/* Close X */}
-            <button
-              type="button"
-              aria-label="Cerrar"
-              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
-              onClick={() => setOpenDiagFor(null)}
-            >
-              ×
-            </button>
-            <h3 className="font-bold mb-2">Editar diagnóstico</h3>
-            <div className="text-xs text-gray-600 mb-2">
-              {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
+      {
+        openDiagFor !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setOpenDiagFor(null)} />
+            <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
+              {/* Close X */}
+              <button
+                type="button"
+                aria-label="Cerrar"
+                className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+                onClick={() => setOpenDiagFor(null)}
+              >
+                ×
+              </button>
+              <h3 className="font-bold mb-2">Editar diagnóstico</h3>
+              <div className="text-xs text-gray-600 mb-2">
+                {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
+              </div>
+              {/* Reuse the DiagnosticoEditable component to avoid duplicated state/logic */}
+              {typeof openDiagFor === "number" && (
+                <DiagnosticoEditable
+                  patientId={openDiagFor}
+                  diagnosticNotes={diagnosticNotes}
+                  setDiagnosticNotes={setDiagnosticNotes}
+                  diagBlob={diagBlob}
+                  setDiagBlob={setDiagBlob}
+                  diagUrl={diagUrl}
+                  setDiagUrl={setDiagUrl}
+                  diagDuration={diagDuration}
+                  setDiagDuration={setDiagDuration}
+                  diagRecording={diagRecording}
+                  setDiagRecording={setDiagRecording}
+                  diagRecorderRef={diagRecorderRef}
+                  diagChunksRef={diagChunksRef}
+                  diagStartRef={diagStartRef}
+                  diagSaving={diagSaving}
+                  setDiagSaving={setDiagSaving}
+                  saveDiagnosticNote={saveDiagnosticNote}
+                />
+              )}
             </div>
-            {/* Reuse the DiagnosticoEditable component to avoid duplicated state/logic */}
-            {typeof openDiagFor === "number" && (
-              <DiagnosticoEditable
-                patientId={openDiagFor}
-                diagnosticNotes={diagnosticNotes}
-                setDiagnosticNotes={setDiagnosticNotes}
-                diagBlob={diagBlob}
-                setDiagBlob={setDiagBlob}
-                diagUrl={diagUrl}
-                setDiagUrl={setDiagUrl}
-                diagDuration={diagDuration}
-                setDiagDuration={setDiagDuration}
-                diagRecording={diagRecording}
-                setDiagRecording={setDiagRecording}
-                diagRecorderRef={diagRecorderRef}
-                diagChunksRef={diagChunksRef}
-                diagStartRef={diagStartRef}
-                diagSaving={diagSaving}
-                setDiagSaving={setDiagSaving}
-                saveDiagnosticNote={saveDiagnosticNote}
-              />
-            )}
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Procedures modal */}
-      {openProcFor !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProcFor(null)} />
-          <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
-            {/* Close X */}
-            <button
-              type="button"
-              aria-label="Cerrar"
-              className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
-              onClick={() => setOpenProcFor(null)}
-            >
-              ×
-            </button>
-            <h3 className="font-bold mb-2">Procedimientos</h3>
-            <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-              {(procList[openProcFor] ?? []).map((proc) => {
-                const isEditing = editingProcId === proc.id;
-                const isSavingThis = Boolean(procEditingSaving[proc.id]);
-                return (
-                  <div key={proc.id} className="p-2 border rounded">
-                    <div className="flex justify-between items-start gap-2">
-                      <div className="text-xs text-gray-500">
-                        {to12HourWithDate(proc.created_at)}
+      {
+        openProcFor !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProcFor(null)} />
+            <div className="relative bg-white text-black rounded p-4 w-full max-w-lg z-10">
+              {/* Close X */}
+              <button
+                type="button"
+                aria-label="Cerrar"
+                className="absolute top-3 right-3 text-gray-600 hover:text-gray-900"
+                onClick={() => setOpenProcFor(null)}
+              >
+                ×
+              </button>
+              <h3 className="font-bold mb-2">Procedimientos</h3>
+              <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+                {(procList[openProcFor] ?? []).map((proc) => {
+                  const isEditing = editingProcId === proc.id;
+                  const isSavingThis = Boolean(procEditingSaving[proc.id]);
+                  return (
+                    <div key={proc.id} className="p-2 border rounded">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="text-xs text-gray-500">
+                          {to12HourWithDate(proc.created_at)}
+                        </div>
+                        <div className="text-xs text-gray-400">#{proc.id}</div>
                       </div>
-                      <div className="text-xs text-gray-400">#{proc.id}</div>
-                    </div>
-                    {/* Editar procedimiento: textarea si está editando, texto si no */}
-                    {isEditing ? (
-                      <textarea
-                        className="w-full mt-2 p-2 border rounded"
-                        value={editProcDesc[proc.id] ?? ""}
-                        onChange={(e) =>
-                          setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
-                        }
-                      />
-                    ) : (
-                      <div className="mt-2">{proc.descripcion}</div>
-                    )}
-                    {proc.audio_url ? (
-                      <div className="mt-2">
-                        <audio controls src={proc.audio_url} className="w-full" />
-                        <div className="text-xs text-gray-400">Audio adjunto</div>
-                      </div>
-                    ) : null}
-                    <div className="mt-2 flex gap-2">
+                      {/* Editar procedimiento: textarea si está editando, texto si no */}
                       {isEditing ? (
-                        <>
-                          <button
-                            className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
-                            onClick={async () => {
-                              // delegate to central handler (it toggles saving state)
-                              await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
-                            }}
-                            disabled={isSavingThis}
-                          >
-                            {isSavingThis ? "Guardando..." : "Guardar"}
-                          </button>
-                          <button
-                            className="px-3 py-1 rounded bg-gray-200"
-                            onClick={() => {
-                              setEditingProcId(null);
-                              setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
-                            }}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            className="px-3 py-1 rounded bg-red-600 text-white"
-                            onClick={async () => {
-                              await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                            }}
-                          >
-                            Eliminar
-                          </button>
-                        </>
+                        <textarea
+                          className="w-full mt-2 p-2 border rounded"
+                          value={editProcDesc[proc.id] ?? ""}
+                          onChange={(e) =>
+                            setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
+                          }
+                        />
                       ) : (
-                        <>
-                          <button
-                            className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
-                            onClick={() => {
-                              setEditingProcId(proc.id);
-                              setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
-                            }}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            className="px-3 py-1 rounded bg-red-600 text-white"
-                            onClick={async () => {
-                              await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                            }}
-                          >
-                            Eliminar
-                          </button>
-                        </>
+                        <div className="mt-2">{proc.descripcion}</div>
                       )}
+                      {proc.audio_url ? (
+                        <div className="mt-2">
+                          <audio controls src={proc.audio_url} className="w-full" />
+                          <div className="text-xs text-gray-400">Audio adjunto</div>
+                        </div>
+                      ) : null}
+                      <div className="mt-2 flex gap-2">
+                        {isEditing ? (
+                          <>
+                            <button
+                              className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
+                              onClick={async () => {
+                                // delegate to central handler (it toggles saving state)
+                                await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
+                              }}
+                              disabled={isSavingThis}
+                            >
+                              {isSavingThis ? "Guardando..." : "Guardar"}
+                            </button>
+                            <button
+                              className="px-3 py-1 rounded bg-gray-200"
+                              onClick={() => {
+                                setEditingProcId(null);
+                                setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              className="px-3 py-1 rounded bg-red-600 text-white"
+                              onClick={async () => {
+                                await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                              }}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
+                              onClick={() => {
+                                setEditingProcId(proc.id);
+                                setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
+                              }}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              className="px-3 py-1 rounded bg-red-600 text-white"
+                              onClick={async () => {
+                                await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                              }}
+                            >
+                              Eliminar
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-3 flex flex-col gap-2">
-              <textarea
-                className="w-full p-2 border rounded"
-                placeholder="Agregar nuevo procedimiento (texto)..."
-                value={procInput}
-                onChange={(e) => setProcInput(e.target.value)}
-              />
-              <div className="flex gap-2">
-                <button
-                  className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
-                  onClick={async () => {
-                    if (openProcFor) await addProcedure(openProcFor);
-                  }}
-                  disabled={!procInput.trim()}
-                >
-                  Guardar procedimiento
-                </button>
-                <button
-                  className="px-3 py-1 rounded bg-gray-200"
-                  onClick={() => setProcInput("")}
-                >
-                  Limpiar
-                </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex flex-col gap-2">
+                <textarea
+                  className="w-full p-2 border rounded"
+                  placeholder="Agregar nuevo procedimiento (texto)..."
+                  value={procInput}
+                  onChange={(e) => setProcInput(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <button
+                    className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                    onClick={async () => {
+                      if (openProcFor) await addProcedure(openProcFor);
+                    }}
+                    disabled={!procInput.trim()}
+                  >
+                    Guardar procedimiento
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-gray-200"
+                    onClick={() => setProcInput("")}
+                  >
+                    Limpiar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Patient profile modal */}
       {
@@ -1891,13 +1929,13 @@ export default function BedSwapBoard() {
               {/* Menú de tabs */}
               <div className="flex gap-2 mb-4">
                 <button
-                  className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                  className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-400"}`}
                   onClick={() => setProfileTab("perfil")}
                 >
                   Perfil paciente
                 </button>
                 <button
-                  className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-200"}`}
+                  className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-400"}`}
                   onClick={() => setProfileTab("diagnostico")}
                 >
                   Diagnóstico
@@ -2216,7 +2254,7 @@ function auxStatusClass(s?: AuxBedStatus | null) {
     case "Reserva":
       return "bg-orange-600 text-white";
     default:
-      return "bg-white/10 text-white";
+      return "bg-gray-200 text-white";
   }
 }
 
