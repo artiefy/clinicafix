@@ -164,6 +164,25 @@ export default function BedSwapBoard() {
   // Nuevo: estado para tab activo en el modal de paciente
   const [profileTab, setProfileTab] = useState<"perfil" | "diagnostico" | "procedimientos" | "pre-egreso">("perfil");
 
+  // --- NUEVO: compute resolved patient and permitted tabs for profile modal (hooks at top-level) ---
+  const profileResolved = React.useMemo(() => {
+    return profilePatient ?? (openProfileFor ? patients.find((p) => p.id === openProfileFor) ?? null : null);
+  }, [profilePatient, openProfileFor, patients]);
+
+  const profileEff = React.useMemo(() => getPatientEffectiveStatus(profileResolved ?? undefined), [profileResolved]);
+
+  const showProfileOnly = profileEff === "sin cama" || profileEff === "con cama" || profileEff === "";
+  const showDiagAndProc = profileEff === "diagnosticos_procedimientos";
+  const showAllForPreEgreso = profileEff === "pre-egreso";
+
+  // Ensure active tab is valid whenever effective status changes
+  useEffect(() => {
+    if (showProfileOnly && profileTab !== "perfil") setProfileTab("perfil");
+    if (!showDiagAndProc && profileTab === "diagnostico") setProfileTab("perfil");
+    if (!showDiagAndProc && profileTab === "procedimientos") setProfileTab("perfil");
+    if (!showAllForPreEgreso && profileTab === "pre-egreso") setProfileTab("perfil");
+  }, [showProfileOnly, showDiagAndProc, showAllForPreEgreso, profileTab]); // added profileTab to satisfy eslint
+
   const openProfile = useCallback(
     async (patientId: number) => {
       // intentar resolver desde cache local primero
@@ -1948,7 +1967,8 @@ export default function BedSwapBoard() {
               >
                 <RiCloseCircleLine size={32} />
               </button>
-              {/* Menú de tabs */}
+
+              {/* Menú de tabs: render condicional según estado efectivo */}
               <div className="flex gap-2 mb-4">
                 <button
                   className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-400"}`}
@@ -1956,30 +1976,39 @@ export default function BedSwapBoard() {
                 >
                   Perfil paciente
                 </button>
-                <button
-                  className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-400"}`}
-                  onClick={() => setProfileTab("diagnostico")}
-                >
-                  Diagnóstico
-                </button>
-                <button
-                  className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
-                  onClick={() => {
-                    setProfileTab("procedimientos");
-                    if (openProfileFor) void loadProcedures(openProfileFor);
-                  }}
-                >
-                  Procedimientos
-                </button>
-                {/* NUEVO: pestaña Pre-egreso */}
-                <button
-                  className={`px-6 py-1 rounded font-semibold ${profileTab === "pre-egreso" ? "bg-rose-600 text-white" : "bg-gray-200"}`}
-                  onClick={() => setProfileTab("pre-egreso")}
-                >
-                  Pre-egreso
-                </button>
+
+                {(showDiagAndProc || showAllForPreEgreso) && (
+                  <button
+                    className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-400"}`}
+                    onClick={() => setProfileTab("diagnostico")}
+                  >
+                    Diagnóstico
+                  </button>
+                )}
+
+                {(showDiagAndProc || showAllForPreEgreso) && (
+                  <button
+                    className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
+                    onClick={() => {
+                      setProfileTab("procedimientos");
+                      if (openProfileFor) void loadProcedures(openProfileFor);
+                    }}
+                  >
+                    Procedimientos
+                  </button>
+                )}
+
+                {showAllForPreEgreso && (
+                  <button
+                    className={`px-6 py-1 rounded font-semibold ${profileTab === "pre-egreso" ? "bg-rose-600 text-white" : "bg-gray-200"}`}
+                    onClick={() => setProfileTab("pre-egreso")}
+                  >
+                    Pre-egreso
+                  </button>
+                )}
               </div>
-              {/* Contenido según tab */}
+
+              {/* Contenido: sólo renderizar las secciones que estén permitidas */}
               {profileTab === "perfil" && (
                 <div>
                   <h3 className="font-bold mb-2">Ficha del paciente</h3>
@@ -2078,13 +2107,14 @@ export default function BedSwapBoard() {
                   </div>
                 </div>
               )}
-              {profileTab === "diagnostico" && (
+
+              {/* Diagnóstico: sólo si está permitido */}
+              {profileTab === "diagnostico" && (showDiagAndProc || showAllForPreEgreso) && (
                 <div>
                   <h3 className="font-bold mb-2">Diagnóstico</h3>
                   <div className="text-xs text-gray-600 mb-2">
                     {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
                   </div>
-                  {/* Estado de edición para diagnóstico */}
                   {typeof openProfileFor === "number" && (
                     <DiagnosticoEditable
                       patientId={openProfileFor}
@@ -2108,7 +2138,9 @@ export default function BedSwapBoard() {
                   )}
                 </div>
               )}
-              {profileTab === "procedimientos" && (
+
+              {/* Procedimientos: sólo si está permitido */}
+              {profileTab === "procedimientos" && (showDiagAndProc || showAllForPreEgreso) && (
                 <div>
                   <h3 className="font-bold mb-2">Procedimientos</h3>
                   <div className="space-y-2 max-h-[40vh] overflow-y-auto">
@@ -2123,7 +2155,6 @@ export default function BedSwapBoard() {
                             </div>
                             <div className="text-xs text-gray-400">#{proc.id}</div>
                           </div>
-                          {/* Editar procedimiento: textarea si está editando, texto si no */}
                           {isEditing ? (
                             <textarea
                               className="w-full mt-2 p-2 border rounded"
@@ -2147,8 +2178,7 @@ export default function BedSwapBoard() {
                                 <button
                                   className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
                                   onClick={async () => {
-                                    // delegate to central handler (it toggles saving state)
-                                    await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                    await saveProcedureEdit(proc.id, openProfileFor ?? openProfileFor ?? 0);
                                   }}
                                   disabled={isSavingThis}
                                 >
@@ -2166,7 +2196,7 @@ export default function BedSwapBoard() {
                                 <button
                                   className="px-3 py-1 rounded bg-red-600 text-white"
                                   onClick={async () => {
-                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                    await deleteProcedure(proc.id, openProfileFor ?? openProfileFor ?? 0);
                                   }}
                                 >
                                   Eliminar
@@ -2186,7 +2216,7 @@ export default function BedSwapBoard() {
                                 <button
                                   className="px-3 py-1 rounded bg-red-600 text-white"
                                   onClick={async () => {
-                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
+                                    await deleteProcedure(proc.id, openProfileFor ?? openProfileFor ?? 0);
                                   }}
                                 >
                                   Eliminar
@@ -2225,14 +2255,14 @@ export default function BedSwapBoard() {
                   </div>
                 </div>
               )}
-              {/* NUEVO: pestaña Pre-egreso */}
-              {profileTab === "pre-egreso" && (
+
+              {/* Pre-egreso: sólo si está permitido (y cuando esté activo se permite ver todo el menú) */}
+              {profileTab === "pre-egreso" && showAllForPreEgreso && (
                 <div>
                   <h3 className="font-bold mb-2">Pre-egreso</h3>
                   <div className="text-xs text-gray-600 mb-2">
                     {preEgresoSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
                   </div>
-                  {/* Estado de edición para pre-egreso */}
                   {typeof openProfileFor === "number" && (
                     <PreEgresoEditable
                       patientId={openProfileFor}
