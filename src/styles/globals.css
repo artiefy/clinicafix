@@ -506,6 +506,23 @@ select:focus,
     0 6px 12px rgba(0, 0, 0, 0.04);
 }
 
+/* NEW: estilo de highlight específico para tarjetas de cama durante drag */
+.bed-highlight {
+  /* Darker neon-blue glow: menos brillante, más profundo y con mayor contraste */
+  box-shadow:
+    0 0 0 6px rgba(0, 120, 255, 0.22),
+    0 12px 34px rgba(0, 90, 220, 0.3),
+    0 0 60px rgba(0, 70, 200, 0.55);
+  border-radius: 12px;
+  transform: translateZ(0);
+  transition:
+    box-shadow 140ms ease,
+    transform 140ms ease;
+  z-index: 60;
+  /* contorno más definido y oscuro */
+  outline: 1px solid rgba(0, 140, 255, 0.85);
+}
+
 /* --- UPDATED: estilos para preview flotante y original atenuado --- */
 .drag-preview {
   box-shadow:

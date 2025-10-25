@@ -911,7 +911,7 @@ export default function BedSwapBoard() {
                 const tb = b.last_update ? new Date(b.last_update).getTime() : 0;
                 return tb - ta;
               })[0];
-            setHighlightBedId(mostRecentAvailable?.id ?? null);
+            setHighlightBedId(mostRecentAvailable?.id ?? null); // <-- ilumina solo la tarjeta de cama
           } else {
             // paciente con cama u otros:
             // - si viene de diagnóstico/procedimiento permitir mover a Ocupada (Atención Médica) y Disponible
@@ -933,7 +933,7 @@ export default function BedSwapBoard() {
         },
         onDrop: () => {
           setAllowedColumns([]);
-          setHighlightBedId(null);
+          setHighlightBedId(null); // <-- limpiar highlight al terminar drag
           setDragging({ type: null });
           setHoverStatus(null);
           setPlaceholderHeight(null);
@@ -1347,7 +1347,7 @@ export default function BedSwapBoard() {
       }
       // asegurar limpieza final de iluminación en el desmontaje
       setAllowedColumns([]);
-      setHighlightBedId(null);
+      setHighlightBedId(null); // <-- limpiar highlight al desmontar
     };
   }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById, getRoomNumber, mutate]);
 
@@ -1527,14 +1527,15 @@ export default function BedSwapBoard() {
                 {statusGroups.Disponible.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
                   const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
-                  const isBedHighlight = hoverStatus === `bed-${bed.id}` || _highlightBedId === bed.id;
+                  // --- MODIFICADO: iluminar solo la cama si coincide con _highlightBedId ---
+                  const isBedHighlight = _highlightBedId === bed.id;
                   return (
                     <div
                       key={bed.id}
                       // permitir arrastrar camas siempre que no sean "Atención Médica" y no tengan paciente activo
                       data-draggable-bed={!hasActivePatient && bed.status !== "Atención Médica" ? String(bed.id) : undefined}
                       data-drop-bed={String(bed.id)}
-                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-green-600 bg-green-100/80`}
+                      className={`card-item relative ${isBedHighlight ? "bed-highlight ring-4 ring-sky-400" : ""} border-l-4 border-green-600 bg-green-100/80`}
                     >
                       <div className="font-bold">CAMA {bed.id}</div>
                       <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
@@ -1608,7 +1609,7 @@ export default function BedSwapBoard() {
                       <div
                         key={bed.id}
                         data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                        className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-red-600 bg-red-100/80`}
+                        className={`card-item relative ${isBedHighlight ? "bed-highlight ring-2 ring-sky-400" : ""} border-l-4 border-red-600 bg-red-100/80`}
                       >
                         <div className="font-bold">CAMA {bed.id}</div>
                         <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
@@ -1673,7 +1674,7 @@ export default function BedSwapBoard() {
                     <div
                       key={bed.id}
                       data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-blue-600 bg-blue-100/80`}
+                      className={`card-item relative ${isBedHighlight ? "bed-highlight ring-2 ring-sky-400" : ""} border-l-4 border-blue-600 bg-blue-100/80`}
                     >
                       <div className="font-bold">CAMA {bed.id}</div>
                       <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
@@ -1739,7 +1740,7 @@ export default function BedSwapBoard() {
                     <div
                       key={bed.id}
                       data-draggable-patient={assigned ? String(assigned.id) : undefined}
-                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} border-l-4 border-amber-600 bg-amber-100/80`}
+                      className={`card-item relative ${isBedHighlight ? "bed-highlight ring-2 ring-sky-400" : ""} border-l-4 border-amber-600 bg-amber-100/80`}
                     >
                       <div className="font-bold">CAMA {bed.id}</div>
                       <div className="text-md text-gray-700 font-semibold mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
@@ -1849,7 +1850,7 @@ export default function BedSwapBoard() {
                       // permitir arrastrar camas en Limpieza hacia Disponible si no tienen paciente activo y no son Atención Médica
                       data-draggable-bed={!hasActivePatient && bed.status !== "Atención Médica" ? String(bed.id) : undefined}
                       data-drop-bed={String(bed.id)}
-                      className={`card-item relative ${isBedHighlight ? "ring-2 ring-sky-400" : ""} bg-yellow-50 border-l-4 border-yellow-500`}
+                      className={`card-item relative ${isBedHighlight ? "bed-highlight ring-2 ring-sky-400" : ""} bg-yellow-50 border-l-4 border-yellow-500`}
                     >
                       <div className="font-bold">CAMA {bed.id}</div>
                       <div className="text-md text-gray-700 mt-0.5">Habit. {getRoomNumber(bed.room_id)}</div>
@@ -2315,7 +2316,7 @@ export default function BedSwapBoard() {
                                 <button
                                   className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
                                   onClick={async () => {
-                                    await saveProcedureEdit(proc.id, openProfileFor ?? openProfileFor ?? 0);
+                                    await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
                                   }}
                                   disabled={isSavingThis}
                                 >
@@ -2333,7 +2334,7 @@ export default function BedSwapBoard() {
                                 <button
                                   className="px-3 py-1 rounded bg-red-600 text-white"
                                   onClick={async () => {
-                                    await deleteProcedure(proc.id, openProfileFor ?? openProfileFor ?? 0);
+                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
                                   }}
                                 >
                                   Eliminar
@@ -2353,7 +2354,7 @@ export default function BedSwapBoard() {
                                 <button
                                   className="px-3 py-1 rounded bg-red-600 text-white"
                                   onClick={async () => {
-                                    await deleteProcedure(proc.id, openProfileFor ?? openProfileFor ?? 0);
+                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
                                   }}
                                 >
                                   Eliminar
