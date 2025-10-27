@@ -11,14 +11,14 @@ export default function BedAvailabilityTable() {
   const hourly: BedAvailabilityPrediction[] = Array.isArray(hourlyRaw) ? hourlyRaw : [];
   const daily: BedAvailabilityPrediction[] = Array.isArray(dailyRaw) ? dailyRaw : [];
 
-  // Agrupa por fecha para la tabla diaria (sumando camas por fecha)
+  // Agrupa por fecha para la tabla diaria (sumando camas por fecha y promediando probabilidad)
   const dailyGrouped = daily.reduce((acc, curr) => {
-    if (!acc[curr.fecha]) acc[curr.fecha] = { camas: 0, probabilidad: 0, habitaciones: [] as number[] };
+    if (!acc[curr.fecha]) acc[curr.fecha] = { camas: 0, probabilidades: [] as number[], habitaciones: [] as number[] };
     acc[curr.fecha].camas += curr.camas_disponibles;
-    acc[curr.fecha].probabilidad += curr.probabilidad;
-    acc[curr.fecha].habitaciones.push(curr.room_id);
+    acc[curr.fecha].probabilidades.push(curr.probabilidad);
+    acc[curr.fecha].habitaciones.push(curr.habitacion ?? curr.room_id);
     return acc;
-  }, {} as Record<string, { camas: number; probabilidad: number; habitaciones: number[] }>);
+  }, {} as Record<string, { camas: number; probabilidades: number[]; habitaciones: number[] }>);
 
   return (
     <div className="card bg-white/95 backdrop-blur-sm rounded-xl shadow-xl border border-gray-200 p-6">
@@ -95,21 +95,27 @@ export default function BedAvailabilityTable() {
                   </td>
                 </tr>
               ) : (
-                Object.entries(dailyGrouped).map(([fecha, data], idx) => (
-                  <tr key={fecha} className={`hover:bg-purple-50 transition-colors duration-200 ${idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
-                    <td className="px-6 py-4 font-medium text-gray-800">{fecha}</td>
-                    <td className="px-6 py-4 text-gray-700">{data.camas}</td>
-                    <td className="px-6 py-4 text-gray-700">{data.habitaciones.join(", ")}</td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${data.probabilidad > 0.8 ? 'bg-green-100 text-green-800' :
-                        data.probabilidad > 0.5 ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                        {(data.probabilidad * 100).toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                ))
+                Object.entries(dailyGrouped).map(([fecha, data], idx) => {
+                  const avgProb =
+                    data.probabilidades.length > 0
+                      ? data.probabilidades.reduce((a, b) => a + b, 0) / data.probabilidades.length
+                      : 0;
+                  return (
+                    <tr key={fecha} className={`hover:bg-purple-50 transition-colors duration-200 ${idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
+                      <td className="px-6 py-4 font-medium text-gray-800">{fecha}</td>
+                      <td className="px-6 py-4 text-gray-700">{data.camas}</td>
+                      <td className="px-6 py-4 text-gray-700">{data.habitaciones.join(", ")}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${avgProb > 0.8 ? 'bg-green-100 text-green-800' :
+                            avgProb > 0.5 ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                          }`}>
+                          {(avgProb * 100).toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
