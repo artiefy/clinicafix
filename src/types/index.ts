@@ -145,3 +145,14 @@ export interface PreEgreso {
   saved_at: Date | string;
   created_at: Date | string;
 }
+
+export interface BedAvailabilityPrediction {
+  id: number;
+  fecha: string; // ISO date string
+  cama_id: number;
+  habitacion_id: number;
+  proxima_salida_paciente: string;
+  hora_salida: string;
+  probabilidad: number;
+  created_at: string;
+}

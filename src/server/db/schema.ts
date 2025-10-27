@@ -203,3 +203,19 @@ export const patient_procedures = pgTable("patient_procedures", {
   audio_url: text("audio_url"),
   created_at: timestamp("created_at").defaultNow(),
 });
+
+// NUEVO: tabla para predicción de disponibilidad de camas
+export const bed_availability_predictions = createTable(
+  "bed_availability_predictions",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    fecha: d.date().notNull(),
+    cama_id: d.integer().notNull().references(() => beds.id),
+    habitacion_id: d.integer().notNull().references(() => rooms.id),
+    proxima_salida_paciente: d.varchar({ length: 128 }).notNull(),
+    hora_salida: d.time().notNull(),
+    probabilidad: d.integer().notNull(), // porcentaje 0-100
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("bed_availability_predictions_fecha_idx").on(t.fecha)]
+);

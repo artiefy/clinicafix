@@ -1,5 +1,6 @@
 import React from "react";
 
+import BedAvailabilityTable from "@/components/BedAvailabilityTable";
 import BedStatusBoard from "@/components/BedStatusBoard";
 import BedSwapBoard from "@/components/BedSwapBoard";
 import EgressTracker from "@/components/EgressTracker";
@@ -15,6 +16,11 @@ export default function HomePage() {
             <BedSwapBoard />
           </section>
         </ProtectedDashboard>
+
+        {/* NUEVO: tabla de disponibilidad de camas */}
+        <section>
+          <BedAvailabilityTable />
+        </section>
 
         {/* Egress Tracker: full-width single row below the two panels */}
         <section className="w-full">
