@@ -88,11 +88,11 @@ export interface Discharge {
 export interface Procedure {
   id: number;
   patient_id: number;
-  descripcion: string;
-  created_at: Date | string;
-  // ahora los audios se guardan en la tabla procedure_audios (varios por procedimiento)
-  // campo opcional para compatibilidad con UI (puede venir del backend como convenience)
-  audio_url?: string | null;
+  nombre?: string;
+  descripcion?: string;
+  tiempo?: number;
+  audio_url?: string;
+  created_at: string | Date;
 }
 
 // Nuevo: registros de audio asociados a procedimientos (múltiples por procedimiento)
@@ -105,6 +105,17 @@ export interface ProcedureAudio {
   audio_duration_seconds?: number | null;
   audio_mime?: string | null;
   created_at: Date | string;
+}
+
+export interface PatientProcedure {
+  id: number;
+  patient_id: number;
+  procedure_id: number;
+  nombre?: string;
+  descripcion?: string;
+  tiempo?: number;
+  audio_url?: string;
+  created_at: string | Date;
 }
 
 export interface Prediction {

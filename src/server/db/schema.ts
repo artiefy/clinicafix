@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, pgTableCreator } from "drizzle-orm/pg-core";
+import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 export const createTable = pgTableCreator((name) => `${name}`);
 
@@ -110,16 +111,15 @@ export const posts = createTable(
 );
 
 // New: tabla de procedimientos por paciente
-export const procedures = createTable(
-  "procedures",
-  (d) => ({
-    id: d.serial().primaryKey(),
-    patient_id: d.integer().notNull().references(() => patients.id),
-    descripcion: d.text().notNull(),
-    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
-  }),
-  (t) => [index("procedures_patient_idx").on(t.patient_id)]
-);
+export const procedures = pgTable("procedures", {
+  id: serial("id").primaryKey(),
+  patient_id: integer("patient_id").notNull(),
+  nombre: text("nombre").default(""),
+  descripcion: text("descripcion").default(""),
+  tiempo: integer("tiempo"), // <-- sin default
+  audio_url: text("audio_url"), // <-- sin default
+  created_at: timestamp("created_at").defaultNow(),
+});
 
 // Nuevo: tabla para audios de DIAGNÓSTICO (varios registros por paciente si se necesita)
 export const diagnostic_audios = createTable(
@@ -177,3 +177,29 @@ export const epicrisis = createTable(
   }),
   (t) => [index("epicrisis_patient_idx").on(t.patient_id)]
 );
+
+// NUEVO: tabla para procedimientos (definición de procedimientos)
+export const procedures_definition = createTable(
+  "procedures_definition",
+  (d) => ({
+    id: d.serial().primaryKey(),
+    nombre: d.varchar({ length: 256 }).notNull(),
+    descripcion: d.text(),
+    tiempo_estimado: d.integer(), // en minutos
+    created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+    updated_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
+  }),
+  (t) => [index("procedures_definition_nombre_idx").on(t.nombre)]
+);
+
+// NUEVO: tabla para relacionar pacientes y procedimientos (historial de procedimientos)
+export const patient_procedures = pgTable("patient_procedures", {
+  id: serial("id").primaryKey(),
+  patient_id: integer("patient_id").notNull(),
+  procedure_id: integer("procedure_id"),
+  nombre: text("nombre"),
+  descripcion: text("descripcion"),
+  tiempo: integer("tiempo"),
+  audio_url: text("audio_url"),
+  created_at: timestamp("created_at").defaultNow(),
+});

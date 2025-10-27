@@ -93,6 +93,19 @@ export default function BedSwapBoard() {
   const { data: roomsData } = useSWR<Room[]>("/api/rooms");
   const { data: patientsData } = useSWR<Patient[]>("/api/patients");
   const { data: dischargesData } = useSWR<Discharge[]>("/api/discharges");
+  // Add polling for all procedures
+  const { data: allProcedures } = useSWR<Procedure[]>("/api/procedures");
+
+  // Create memoized map of procedures by patient_id
+  const procMap = React.useMemo(() => {
+    const map = new Map<number, Procedure[]>();
+    allProcedures?.forEach((p) => {
+      const pid = p.patient_id;
+      if (!map.has(pid)) map.set(pid, []);
+      map.get(pid)!.push(p);
+    });
+    return map;
+  }, [allProcedures]);
 
   const [beds, setBeds] = useState<Bed[]>(Array.isArray(bedsData) ? bedsData : []);
   const [rooms, setRooms] = useState<Room[]>(Array.isArray(roomsData) ? roomsData : []);
@@ -112,18 +125,14 @@ export default function BedSwapBoard() {
   const [openProcFor, setOpenProcFor] = useState<number | null>(null);
   const [procList, setProcList] = useState<Record<number, Procedure[]>>({});
   const [procInput, setProcInput] = useState<string>("");
-  const [procAudio, setProcAudio] = useState<File | null>(null); // nuevo estado para audio (subida)
   // edición / borrado de procedimientos (frontend)
-  const [editingProcId, setEditingProcId] = useState<number | null>(null);
-  const [editProcDesc, setEditProcDesc] = useState<Record<number, string>>({});
+  const [editingProcId, setEditingProcId] = useState<number | null>(null); // <-- agrega el setter
+  // Añade estado para rastrear updated_at localmente (para mostrar hora de guardado en ediciones)
+  const [procUpdatedAt, setProcUpdatedAt] = useState<Record<number, string>>({});
   // Recording state for procedures (in-modal recorder)
   const [_procRecording, _setProcRecording] = useState<boolean>(false);
   const _procRecorderRef = useRef<MediaRecorder | null>(null);
   const _procChunksRef = useRef<BlobPart[]>([]);
-  const [procBlobRecorded, setProcBlobRecorded] = useState<Blob | null>(null);
-  const [procUrlRecorded, setProcUrlRecorded] = useState<string | null>(null);
-  const [procDurationRecorded, setProcDurationRecorded] = useState<number | null>(null);
-  const _procStartRef = useRef<number | null>(null);
   // Recording state for DIAGNÓSTICO (fueron los identificadores que faltaban)
   const [diagRecording, setDiagRecording] = useState<boolean>(false);
   const diagRecorderRef = useRef<MediaRecorder | null>(null);
@@ -146,7 +155,7 @@ export default function BedSwapBoard() {
 
   // UI: estados de "saving" para modales (diagnóstico / procedimientos)
   const [diagSaving, setDiagSaving] = useState(false);
-  const [procEditingSaving, setProcEditingSaving] = useState<Record<number, boolean>>({});
+  const [_procEditingSaving, _setProcEditingSaving] = useState<Record<number, boolean>>({}); // <-- prefijo _ para silenciar eslint
 
   // Nuevo: estado y helper para modal de perfil del paciente (corrige errores "openProfile" no definido)
   const [openProfileFor, setOpenProfileFor] = useState<number | null>(null);
@@ -332,156 +341,65 @@ export default function BedSwapBoard() {
   // Cargar procedimientos de un paciente al abrir modal
   const loadProcedures = useCallback(async (patientId: number) => {
     try {
-      const res = await fetch(`/api/procedures?patientId=${patientId}`);
+      const res = await fetch(`/api/procedures?patientId=${patientId}`); // sigue siendo /api/procedures?patientId=...
       if (!res.ok) return;
       const data = await res.json();
+      // ahora el backend devuelve los patient_procedures (posiblemente con campos nombre/tiempo desde el template)
       setProcList((prev) => ({ ...prev, [patientId]: Array.isArray(data) ? data : [] }));
-    } catch (e) {
-      console.error("Error cargando procedimientos:", e);
+    } catch (_e) {
+      console.error("Error cargando procedimientos:", _e);
     }
   }, []);
-  // Agregar procedimiento (texto o audio). Prioriza procBlobRecorded (grabado) sobre procAudio (archivo seleccionado).
+  // Agregar procedimiento: ahora enviamos procedure_id (template) + patient_id al nuevo endpoint
   const addProcedure = useCallback(
     async (patientId: number) => {
-      if (!procInput.trim() && !procAudio && !procBlobRecorded) return;
-      const temp: Procedure = {
-        id: Date.now(),
-        patient_id: patientId,
-        descripcion: procInput.trim() || "(audio)",
-        // created_at inicial optimista; si el backend devuelve el objeto, se reemplazará
-        created_at: new Date().toISOString(),
-        audio_url: procUrlRecorded ?? (procAudio ? URL.createObjectURL(procAudio) : undefined),
-      };
-      // optimistic: añadir temp a la lista
-      setProcList((prev) => ({ ...prev, [patientId]: [...(prev[patientId] ?? []), temp] }));
+      if (!procInput.trim()) return;
+      const selectedProc = proceduresList.find(p => p.nombre === procInput.trim());
+      if (!selectedProc) return;
       setProcInput("");
-      const localFile = procAudio;
-      const localRecorded = procBlobRecorded;
-      const localRecordedDuration = procDurationRecorded;
-      setProcAudio(null);
-      setProcBlobRecorded(null);
-      setProcUrlRecorded(null);
-      setProcDurationRecorded(null);
       try {
-        let res: Response | undefined;
-        if (localRecorded) {
-          const fd = new FormData();
-          fd.append("patient_id", String(patientId));
-          fd.append("descripcion", temp.descripcion);
-          fd.append("file", new File([localRecorded], `procedure-${Date.now()}.webm`, { type: (localRecorded as Blob).type || "audio/webm" }));
-          if (localRecordedDuration) fd.append("duration_seconds", String(localRecordedDuration));
-          res = await fetch("/api/procedures", { method: "POST", body: fd });
-        } else if (localFile) {
-          const fd = new FormData();
-          fd.append("patient_id", String(patientId));
-          fd.append("descripcion", temp.descripcion);
-          fd.append("file", localFile, localFile.name);
-          res = await fetch("/api/procedures", { method: "POST", body: fd });
-        } else {
-          res = await fetch("/api/procedures", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ patient_id: patientId, descripcion: temp.descripcion }),
-          });
-        }
-        // Si backend devuelve el objeto creado, reemplazar la entrada temporal
-        if (res?.ok) {
-          let createdRaw: unknown = null;
-          try {
-            createdRaw = await res.json();
-          } catch {
-            createdRaw = null;
-          }
-          // validar shape sin usar `any`
-          if (
-            createdRaw &&
-            typeof createdRaw === "object" &&
-            "id" in createdRaw &&
-            typeof (createdRaw as Record<string, unknown>).id === "number"
-          ) {
-            const createdProc = createdRaw as Procedure;
-            setProcList((prev) => ({
-              ...prev,
-              [patientId]: (prev[patientId] ?? []).map((p) => (p.id === temp.id ? createdProc : p)),
-            }));
-          } else {
-            // si backend respondió OK pero no devolvió JSON con objeto creado, actualizar timestamp local al completar
-            setProcList((prev) => ({
-              ...prev,
-              [patientId]: (prev[patientId] ?? []).map((p) => (p.id === temp.id ? { ...p, created_at: new Date().toISOString() } : p)),
-            }));
-          }
-        } else {
-          // fallback: recargar la lista si algo falló en el POST (intentar una sola vez)
-          await loadProcedures(patientId);
-        }
-      } catch (e) {
-        console.error("Error guardando procedimiento:", e);
-        // revert optimistic: recargar desde servidor
-        await loadProcedures(patientId);
-      }
-    },
-    [procInput, procAudio, procBlobRecorded, procUrlRecorded, procDurationRecorded, loadProcedures],
-  );
-  // Editar procedimiento — actualiza localmente para evitar GETs dobles
-  const saveProcedureEdit = useCallback(async (procId: number, patientId: number) => {
-    const newText = (editProcDesc[procId] ?? "").trim();
-    if (!newText) return;
-    setProcEditingSaving((s) => ({ ...(s ?? {}), [procId]: true }));
-    try {
-      const res = await fetch(`/api/procedures/${procId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ descripcion: newText }),
-      });
-      if (!res.ok) throw new Error("Error actualizando procedimiento");
-      // optimistic local update (no GET adicional)
-      const nowIso = new Date().toISOString();
-      setProcList((prev) => ({
-        ...prev,
-        [patientId]: (prev[patientId] ?? []).map((p) =>
-          p.id === procId ? { ...p, descripcion: newText, created_at: nowIso } : p
-        ),
-      }));
-      // Registrar la edición en patient_history con la fecha/hora actual
-      try {
-        await fetch("/api/patient_history", {
+        // POST crea una entrada en patient_procedures (relacionada al template)
+        const res = await fetch("/api/procedures", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             patient_id: patientId,
-            tipo: "texto",
-            contenido: `Procedimiento #${procId} editado: ${newText}`.slice(0, 2000),
-            fecha: new Date().toISOString(),
+            procedure_id: selectedProc.id,
+            descripcion: selectedProc.descripcion,
+            tiempo: selectedProc.tiempo,
           }),
         });
-      } catch (historyErr) {
-        console.warn("No se pudo registrar patient_history tras editar procedimiento:", historyErr);
+        if (!res.ok) throw new Error("Error creando procedimiento para paciente");
+        // recarga para obtener el ID real y created_at del backend
+        await loadProcedures(patientId);
+      } catch (_e) {
+        console.error("Error guardando procedimiento:", _e);
+        await loadProcedures(patientId);
       }
-      setEditingProcId(null);
-    } catch (err) {
-      console.error("Error guardando procedimiento:", err);
-      // fallback: recargar
-      await loadProcedures(patientId);
-    } finally {
-      setProcEditingSaving((s) => ({ ...(s ?? {}), [procId]: false }));
-    }
-  }, [editProcDesc, loadProcedures]);
-  // Borrar procedimiento — actualiza localmente para evitar GETs dobles
+    },
+    [procInput, loadProcedures]
+  );
+  // Borrar procedimiento asignado -> DELETE /api/procedures/:id (patient_procedures)
   const deleteProcedure = useCallback(async (procId: number, patientId: number) => {
-    if (!confirm("¿Eliminar este procedimiento? Esta acción no puede deshacerse.")) return;
-    try {
-      const res = await fetch(`/api/procedures/${procId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Error eliminando procedimiento");
-      setProcList((prev) => ({
-        ...prev,
-        [patientId]: (prev[patientId] ?? []).filter((p) => p.id !== procId),
-      }));
-      if (editingProcId === procId) setEditingProcId(null);
-    } catch (err) {
-      console.error("Error eliminando procedimiento:", err);
-      // fallback: recargar
-      await loadProcedures(patientId);
+
+    if (typeof window !== "undefined" && window.confirm("¿Eliminar este procedimiento? Esta acción no puede deshacerse.")) {
+      try {
+        const res = await fetch(`/api/procedures/${procId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Error eliminando procedimiento");
+        setProcList((prev) => ({
+          ...prev,
+          [patientId]: (prev[patientId] ?? []).filter((p) => p.id !== procId),
+        }));
+        setProcUpdatedAt((prev) => {
+          const newPrev = { ...prev };
+          delete newPrev[procId];
+          return newPrev;
+        });
+        if (editingProcId === procId) setEditingProcId(null);
+      } catch (err) {
+        console.error("Error eliminando procedimiento:", err);
+        await loadProcedures(patientId);
+      }
     }
   }, [loadProcedures, editingProcId]);
 
@@ -585,26 +503,36 @@ export default function BedSwapBoard() {
 
   // --- NEW: devuelve los 3 tiempos a mostrar para un paciente dado ---
   // estancia: desde la timestamp de la cama asignada (beds[].last_update) hasta ahora
-  // calculado: estancia + 15 min (placeholder para IA)
+  // calculado: SUMA de los tiempos de procedimientos (en minutos) — mostrado como duración
   // estimado: estancia + 30 min (placeholder para IA)
-  function getPatientTimes(patientId?: number | null) {
+  const getPatientTimes = React.useCallback((patientId?: number | null) => {
     if (!patientId) return null;
     const patient = patients.find((p) => p.id === patientId);
     if (!patient) return null;
     const bed = typeof patient.bed_id === "number" ? beds.find((b) => b.id === patient.bed_id) : undefined;
     const start = bed?.last_update ? new Date(bed.last_update) : null;
-    if (!start || Number.isNaN(start.getTime())) return null;
     const now = new Date();
-    const estanciaMs = Math.max(0, now.getTime() - start.getTime());
-    const calculadoMs = estanciaMs + 15 * 60 * 1000; // +15 min placeholder
-    const estimadoMs = estanciaMs + 30 * 60 * 1000; // +30 min placeholder
+    const estanciaMs = start && !Number.isNaN(start.getTime()) ? Math.max(0, now.getTime() - start.getTime()) : 0;
+
+    // Use procMap for sum
+    const sumProcMinutes = (procMap.get(patientId) ?? []).reduce((sum: number, p: Procedure) => sum + (Number(p.tiempo) || 0), 0);
+    const sumProcMs = sumProcMinutes * 60 * 1000;
+
+    const calculadoMs = sumProcMs;
+
+    const estimadoMs = estanciaMs + 30 * 60 * 1000;
+
     return {
       estanciaMs,
       estanciaStr: formatDurationHuman(estanciaMs),
+      calculadoMs,
       calculadoStr: formatDurationHuman(calculadoMs),
+      estimadoMs,
       estimadoStr: formatDurationHuman(estimadoMs),
+      // opcional: exponer sumProcMinutes si lo necesitas
+      sumProcMinutes,
     };
-  }
+  }, [patients, beds, procMap]);
 
   // helpers that operate by ids (invocables desde Pragmatic callbacks)
   const assignPatientToBed = useCallback(async (patientId: number, bedId: number) => {
@@ -914,12 +842,12 @@ export default function BedSwapBoard() {
             setHighlightBedId(mostRecentAvailable?.id ?? null); // <-- ilumina solo la tarjeta de cama
           } else {
             // paciente con cama u otros:
-            // - si viene de diagnóstico/procedimiento permitir mover a Ocupada (Atención Médica) y Disponible
-            // - en general permitir diagnóstico, pre-egreso, de alta y ver camas Disponibles
-            if (eff === "diagnosticos_procedimientos") {
+            // Permitir mover de ATENCIÓN MÉDICA a DIAGNOSTICO / PROCED.
+            if (eff === "con cama") {
+              setAllowedColumns(["diagnosticos_procedimientos", "pre-egreso", "de alta", "Disponible"]);
+            } else if (eff === "diagnosticos_procedimientos") {
               setAllowedColumns(["diagnosticos_procedimientos", "pre-egreso", "de alta", "Disponible", "Ocupada"]);
             } else {
-              // NOTA: no incluimos "sin cama" aquí para evitar mover tarjetas directamente a Admisiones.
               setAllowedColumns(["diagnosticos_procedimientos", "pre-egreso", "de alta", "Disponible"]);
             }
             setHighlightBedId(null);
@@ -1077,8 +1005,30 @@ export default function BedSwapBoard() {
             if (!allowedColumnsRef.current.includes(status)) return;
             const patientId = source.data.id;
             const draggedPatient = patients.find((p) => p.id === patientId);
+            // Mostrar sombra preview al mover de DIAGNÓSTICO / PROCED. a PRE-EGRESO
+            if (
+              status === "pre-egreso" &&
+              draggedPatient &&
+              getPatientEffectiveStatus(draggedPatient) === "diagnosticos_procedimientos"
+            ) {
+              const rectHeight = source.data.rect?.height;
+              setPlaceholderHeight(typeof rectHeight === "number" ? rectHeight : 48);
+              setHoverStatus(status);
+              return;
+            }
+            // Permitir sombra preview al mover de ATENCIÓN MÉDICA a DIAGNÓSTICO / PROCED.
+            if (
+              status === "diagnosticos_procedimientos" &&
+              draggedPatient &&
+              getPatientEffectiveStatus(draggedPatient) === "con cama"
+            ) {
+              const rectHeight = source.data.rect?.height;
+              setPlaceholderHeight(typeof rectHeight === "number" ? rectHeight : 48);
+              setHoverStatus(status);
+              return;
+            }
             // Prevent dropping into certain columns when patient has NO assigned bed
-            if ((!draggedPatient?.bed_id) && (status === "de alta" || status === "pre-egreso" || status === "diagnosticos_procedimientos")) {
+            if ((!draggedPatient?.bed_id) && (status === "de alta" || status === "pre-egreso" || status === "diagnosticos_procedures")) {
               return;
             }
             // set visual placeholder size for patient card
@@ -1141,7 +1091,7 @@ export default function BedSwapBoard() {
               setHighlightBedId(null);
               return;
             }
-            // 1.b) Si se suelta SOBRE "Ocupada" viniendo desde "diagnosticos_procedimientos",
+            // 1.b) Si se suelta SOBRE "Ocupada" viniendo desde "diagnosticos_procedimiento",
             // volver a marcar al paciente como 'con cama' (mantener bed_id).
             if (status === "Ocupada" && draggedPatient?.bed_id && originCol === "diagnosticos_procedimientos") {
               // Optimistic UI: marcar paciente como con cama y la cama como Atención Médica
@@ -1352,27 +1302,30 @@ export default function BedSwapBoard() {
   }, [beds, patients, assignPatientToBed, changeBedStatusById, updatePatientStatusById, getRoomNumber, mutate]);
 
   // Group beds by status, ordenando cada grupo por last_update descendente
-  const statusGroups: Record<string, Bed[]> = {
-    Limpieza: [],
-    Disponible: [],
-    "Atención Médica": [],
-    "Diagnostico y Procedimiento": [],
-    "Pre-egreso": [],
-    Mantenimiento: [],
-    Aislamiento: [],
-    Reserva: [],
-  };
-  beds.forEach((b: Bed) => {
-    if (statusGroups[b.status]) statusGroups[b.status].push(b);
-  });
-  // Ordenar cada grupo por last_update descendente (más reciente arriba)
-  Object.keys(statusGroups).forEach((status) => {
-    statusGroups[status] = statusGroups[status].slice().sort((a, b) => {
-      const ta = a.last_update ? new Date(a.last_update).getTime() : 0;
-      const tb = b.last_update ? new Date(b.last_update).getTime() : 0;
-      return tb - ta;
+  const statusGroups = React.useMemo(() => {
+    const groups: Record<string, Bed[]> = {
+      Limpieza: [],
+      Disponible: [],
+      "Atención Médica": [],
+      "Diagnostico y Procedimiento": [],
+      "Pre-egreso": [],
+      Mantenimiento: [],
+      Aislamiento: [],
+      Reserva: [],
+    };
+    beds.forEach((b: Bed) => {
+      if (groups[b.status]) groups[b.status].push(b);
     });
-  });
+    // Ordenar cada grupo por last_update descendente (más reciente arriba)
+    Object.keys(groups).forEach((status) => {
+      groups[status] = groups[status].slice().sort((a, b) => {
+        const ta = a.last_update ? new Date(a.last_update).getTime() : 0;
+        const tb = b.last_update ? new Date(b.last_update).getTime() : 0;
+        return tb - ta;
+      });
+    });
+    return groups;
+  }, [beds]);
 
   // --- Nuevo: calcular listas ordenadas para las columnas de pacientes ---
   // Pacientes sin cama: ordenar por estimated_time ascendente (hora de ingreso)
@@ -1425,7 +1378,7 @@ export default function BedSwapBoard() {
     }
   }
 
-  // Mostrar en Diagnóstico / Proced. las camas ocupadas cuyo paciente tiene discharge_status === "diagnosticos_procedimientos"
+  // Mostrar en Diagnóstico / Proced. las camas ocupadas cuyo paciente tiene discharge_status === "diagnosticos_procedures"
   const diagnosticBeds = statusGroups["Diagnostico y Procedimiento"].filter((bed) => {
     const assigned = patients.find((p) => p.bed_id === bed.id);
     return assigned && getPatientEffectiveStatus(assigned) === "diagnosticos_procedimientos";
@@ -1436,6 +1389,25 @@ export default function BedSwapBoard() {
     const assigned = patients.find((p) => p.bed_id === bed.id);
     return assigned && getPatientEffectiveStatus(assigned) === "pre-egreso";
   });
+
+  // --- NUEVO: detectar pacientes en Diagnóstico/Proced. con tiempo estimado <= 2h para avisos específicos ---
+  const patientsForSkeleton = React.useMemo(() => {
+    const bedsToCheck = statusGroups["Diagnostico y Procedimiento"];
+    return bedsToCheck
+      .map((bed) => {
+        const assigned = patients.find((p) => p.bed_id === bed.id);
+        if (assigned) {
+          const times = getPatientTimes(assigned.id);
+          if (times && typeof times.estimadoMs === "number" && times.estimadoMs <= 2 * 60 * 60 * 1000) {
+            return { patient: assigned, bed, room: getRoomNumber(bed.room_id) };
+          }
+        }
+        return null;
+      })
+      .filter(Boolean) as { patient: Patient; bed: Bed; room: number }[]; // Cambia room a number
+  }, [statusGroups, patients, getRoomNumber, getPatientTimes]); // Añade getPatientTimes
+
+  const skeletonShouldShow = patientsForSkeleton.length > 0;
 
   // Render: remove native drag event attributes; add data-attrs for Pragmatic
   return (
@@ -1726,11 +1698,27 @@ export default function BedSwapBoard() {
             >
               <h4 className="uppercase font-extrabold mb-2 text-center">PRE-EGRESO</h4>
               <div className="flex-1">
-                {/* Placeholder / sombra preview — solo si la columna está permitida en este drag */}
+                {/* Patient placeholder at the top */}
                 {allowedColumns.includes("pre-egreso") && hoverStatus === "pre-egreso" ? (
                   <div
                     className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
                     style={placeholderHeight ? { height: `${placeholderHeight}px` } : undefined}
+                  />
+                ) : null}
+                {/* Skeleton de aviso con detalles específicos */}
+                {skeletonShouldShow && patientsForSkeleton.map(({ patient, bed, room }) => (
+                  <div key={patient.id} className="mb-3 p-4 rounded-lg bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-100 shadow-lg animate-pulse border-l-4 border-amber-500">
+                    <div className="font-bold text-amber-800 text-lg">¡Hora recomendada para Pre-egreso!</div>
+                    <div className="text-gray-700 text-sm mt-1">
+                      {patient.name} - Cama {bed.id} - Habit. {room}
+                    </div>
+                  </div>
+                ))}
+                {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Pre-egreso (sólo si está permitido) */}
+                {allowedColumns.includes("pre-egreso") && hoverStatus === "pre-egreso" && _bedPlaceholder?.status === "Pre-egreso" ? (
+                  <div
+                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
+                    style={_bedPlaceholder?.height ? { height: `${_bedPlaceholder.height}px` } : undefined}
                   />
                 ) : null}
                 {preEgresoBeds.length > 0 ? preEgresoBeds.map((bed) => {
@@ -1831,13 +1819,15 @@ export default function BedSwapBoard() {
             >
               <h4 className="uppercase font-extrabold mb-2 text-center">LIMPIEZA</h4>
               <div className="flex-1">
-                {/* Placeholder para preview cuando se arrastra una tarjeta de cama hacia Limpieza (sólo si está permitido) */}
-                {allowedColumns.includes("Limpieza") && hoverStatus === "Limpieza" && _bedPlaceholder?.status === "Limpieza" ? (
-                  <div
-                    className="mb-2 bg-white/20 rounded shadow p-2 transition-all duration-200"
-                    style={_bedPlaceholder?.height ? { height: `${_bedPlaceholder.height}px` } : undefined}
-                  />
-                ) : null}
+                {/* Skeleton de aviso con detalles específicos */}
+                {skeletonShouldShow && patientsForSkeleton.map(({ bed, room }) => (
+                  <div key={bed.id} className="mb-3 p-4 rounded-lg bg-gradient-to-r from-yellow-200 via-yellow-100 to-amber-100 shadow-lg animate-pulse border-l-4 border-yellow-500">
+                    <div className="font-bold text-yellow-800 text-lg">¡Hora recomendada para limpieza!</div>
+                    <div className="text-gray-700 text-sm mt-1">
+                      Cama {bed.id} - Habit. {room}
+                    </div>
+                  </div>
+                ))}
                 {statusGroups.Limpieza.map((bed) => {
                   const assigned = patients.find((p) => p.bed_id === bed.id);
                   const hasActivePatient = Boolean(assigned && getPatientEffectiveStatus(assigned) !== "de alta");
@@ -1964,28 +1954,17 @@ export default function BedSwapBoard() {
               <h3 className="font-bold mb-2">Procedimientos</h3>
               <div className="space-y-2 max-h-[40vh] overflow-y-auto">
                 {(procList[openProcFor] ?? []).map((proc) => {
-                  const isEditing = editingProcId === proc.id;
-                  const isSavingThis = Boolean(procEditingSaving[proc.id]);
+                  // Solo mostrar botón de eliminar, quitar el de editar
                   return (
                     <div key={proc.id} className="p-2 border rounded">
                       <div className="flex justify-between items-start gap-2">
                         <div className="text-xs text-gray-500">
-                          {to12HourWithDate(proc.created_at)}
+                          {to12HourWithDate(proc.created_at)} {procUpdatedAt[proc.id] ? `(Editado: ${to12HourWithDate(procUpdatedAt[proc.id])})` : ""}
                         </div>
                         <div className="text-xs text-gray-400">#{proc.id}</div>
                       </div>
-                      {/* Editar procedimiento: textarea si está editando, texto si no */}
-                      {isEditing ? (
-                        <textarea
-                          className="w-full mt-2 p-2 border rounded"
-                          value={editProcDesc[proc.id] ?? ""}
-                          onChange={(e) =>
-                            setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
-                          }
-                        />
-                      ) : (
-                        <div className="mt-2">{proc.descripcion}</div>
-                      )}
+                      <div className="mt-2 font-semibold">Procedimiento: {proc.nombre ?? proc.descripcion}</div>
+                      <div className="mt-1 text-sm text-gray-700">Tiempo Calculado: {proc.tiempo ? formatDurationHuman(proc.tiempo * 60 * 1000) : "—"}</div>
                       {proc.audio_url ? (
                         <div className="mt-2">
                           <audio controls src={proc.audio_url} className="w-full" />
@@ -1993,86 +1972,43 @@ export default function BedSwapBoard() {
                         </div>
                       ) : null}
                       <div className="mt-2 flex gap-2">
-                        {isEditing ? (
-                          <>
-                            <button
-                              className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
-                              onClick={async () => {
-                                // delegate to central handler (it toggles saving state)
-                                await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
-                              }}
-                              disabled={isSavingThis}
-                            >
-                              {isSavingThis ? "Guardando..." : "Guardar"}
-                            </button>
-                            <button
-                              className="px-3 py-1 rounded bg-gray-200"
-                              onClick={() => {
-                                setEditingProcId(null);
-                                setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
-                              }}
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              className="px-3 py-1 rounded bg-red-600 text-white"
-                              onClick={async () => {
-                                await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                              }}
-                            >
-                              Eliminar
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
-                              onClick={() => {
-                                setEditingProcId(proc.id);
-                                setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
-                              }}
-                            >
-                              Editar
-                            </button>
-                            <button
-                              className="px-3 py-1 rounded bg-red-600 text-white"
-                              onClick={async () => {
-                                await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                              }}
-                            >
-                              Eliminar
-                            </button>
-                          </>
-                        )}
+                        <button
+                          className="px-3 py-1 rounded bg-red-600 text-white"
+                          onClick={async () => {
+                            await deleteProcedure(proc.id, openProfileFor ?? 0);
+                          }}
+                        >
+                          Eliminar
+                        </button>
                       </div>
                     </div>
                   );
                 })}
               </div>
+              {/* Selector para agregar procedimiento existente */}
               <div className="mt-3 flex flex-col gap-2">
-                <textarea
+                <label className="block text-sm font-semibold mb-1">Agregar procedimiento</label>
+                <select
                   className="w-full p-2 border rounded"
-                  placeholder="Agregar nuevo procedimiento (texto)..."
                   value={procInput}
                   onChange={(e) => setProcInput(e.target.value)}
-                />
-                <div className="flex gap-2">
-                  <button
-                    className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
-                    onClick={async () => {
-                      if (openProcFor) await addProcedure(openProcFor);
-                    }}
-                    disabled={!procInput.trim()}
-                  >
-                    Guardar procedimiento
-                  </button>
-                  <button
-                    className="px-3 py-1 rounded bg-gray-200"
-                    onClick={() => setProcInput("")}
-                  >
-                    Limpiar
-                  </button>
-                </div>
+                >
+                  <option value="">Selecciona un procedimiento...</option>
+                  {proceduresList.map(proc => (
+                    <option key={proc.id} value={proc.nombre}>
+                      {proc.nombre} ({proc.tiempo} min)
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                  onClick={async () => {
+                    if (openProfileFor) await addProcedure(openProfileFor);
+                  }}
+                  disabled={!procInput.trim()}
+                >
+                  Guardar procedimiento
+                </button>
               </div>
             </div>
           </div>
@@ -2283,27 +2219,17 @@ export default function BedSwapBoard() {
                   <h3 className="font-bold mb-2">Procedimientos</h3>
                   <div className="space-y-2 max-h-[40vh] overflow-y-auto">
                     {(procList[openProfileFor ?? 0] ?? []).map((proc) => {
-                      const isEditing = editingProcId === proc.id;
-                      const isSavingThis = Boolean(procEditingSaving[proc.id]);
+                      // Solo mostrar botón de eliminar, quitar el de editar
                       return (
                         <div key={proc.id} className="p-2 border rounded">
                           <div className="flex justify-between items-start gap-2">
                             <div className="text-xs text-gray-500">
-                              {to12HourWithDate(proc.created_at)}
+                              {to12HourWithDate(proc.created_at)} {procUpdatedAt[proc.id] ? `(Editado: ${to12HourWithDate(procUpdatedAt[proc.id])})` : ""}
                             </div>
                             <div className="text-xs text-gray-400">#{proc.id}</div>
                           </div>
-                          {isEditing ? (
-                            <textarea
-                              className="w-full mt-2 p-2 border rounded"
-                              value={editProcDesc[proc.id] ?? ""}
-                              onChange={(e) =>
-                                setEditProcDesc((prev) => ({ ...prev, [proc.id]: e.target.value }))
-                              }
-                            />
-                          ) : (
-                            <div className="mt-2">{proc.descripcion}</div>
-                          )}
+                          <div className="mt-2 font-semibold">Procedimiento: {proc.nombre ?? proc.descripcion}</div>
+                          <div className="mt-1 text-sm text-gray-700">Tiempo Calculado: {proc.tiempo ? formatDurationHuman(proc.tiempo * 60 * 1000) : "—"}</div>
                           {proc.audio_url ? (
                             <div className="mt-2">
                               <audio controls src={proc.audio_url} className="w-full" />
@@ -2311,85 +2237,43 @@ export default function BedSwapBoard() {
                             </div>
                           ) : null}
                           <div className="mt-2 flex gap-2">
-                            {isEditing ? (
-                              <>
-                                <button
-                                  className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[120px] flex items-center justify-center gap-2"
-                                  onClick={async () => {
-                                    await saveProcedureEdit(proc.id, openProcFor ?? openProfileFor ?? 0);
-                                  }}
-                                  disabled={isSavingThis}
-                                >
-                                  {isSavingThis ? "Guardando..." : "Guardar"}
-                                </button>
-                                <button
-                                  className="px-3 py-1 rounded bg-gray-200"
-                                  onClick={() => {
-                                    setEditingProcId(null);
-                                    setEditProcDesc((prev) => ({ ...prev, [proc.id]: "" }));
-                                  }}
-                                >
-                                  Cancelar
-                                </button>
-                                <button
-                                  className="px-3 py-1 rounded bg-red-600 text-white"
-                                  onClick={async () => {
-                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                                  }}
-                                >
-                                  Eliminar
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  className="px-3 py-1 rounded bg-yellow-400 hover:bg-yellow-500 text-black"
-                                  onClick={() => {
-                                    setEditingProcId(proc.id);
-                                    setEditProcDesc((prev) => ({ ...prev, [proc.id]: proc.descripcion }));
-                                  }}
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  className="px-3 py-1 rounded bg-red-600 text-white"
-                                  onClick={async () => {
-                                    await deleteProcedure(proc.id, openProcFor ?? openProfileFor ?? 0);
-                                  }}
-                                >
-                                  Eliminar
-                                </button>
-                              </>
-                            )}
+                            <button
+                              className="px-3 py-1 rounded bg-red-600 text-white"
+                              onClick={async () => {
+                                await deleteProcedure(proc.id, openProfileFor ?? 0);
+                              }}
+                            >
+                              Eliminar
+                            </button>
                           </div>
                         </div>
                       );
                     })}
                   </div>
+                  {/* Selector para agregar procedimiento existente */}
                   <div className="mt-3 flex flex-col gap-2">
-                    <textarea
+                    <label className="block text-sm font-semibold mb-1">Agregar procedimiento</label>
+                    <select
                       className="w-full p-2 border rounded"
-                      placeholder="Agregar nuevo procedimiento (texto)..."
                       value={procInput}
                       onChange={(e) => setProcInput(e.target.value)}
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
-                        onClick={async () => {
-                          if (openProcFor) await addProcedure(openProcFor);
-                        }}
-                        disabled={!procInput.trim()}
-                      >
-                        Guardar procedimiento
-                      </button>
-                      <button
-                        className="px-3 py-1 rounded bg-gray-200"
-                        onClick={() => setProcInput("")}
-                      >
-                        Limpiar
-                      </button>
-                    </div>
+                    >
+                      <option value="">Selecciona un procedimiento...</option>
+                      {proceduresList.map(proc => (
+                        <option key={proc.id} value={proc.nombre}>
+                          {proc.nombre} ({proc.tiempo} min)
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                      onClick={async () => {
+                        if (openProfileFor) await addProcedure(openProfileFor);
+                      }}
+                      disabled={!procInput.trim()}
+                    >
+                      Guardar procedimiento
+                    </button>
                   </div>
                 </div>
               )}
@@ -2664,14 +2548,14 @@ function PreEgresoEditable(props: {
   ) => Promise<void>;
 }) {
   const { patientId, setPreEgresoNotes } = props;
-  const [isEditing, setIsEditing] = useState(true);
+  const [_isEditing, setIsEditing] = useState(true); // <-- rename isEditing to _isEditing
   React.useEffect(() => {
     let cancelled = false;
     async function fetchPreEgreso() {
       const res = await fetch(`/api/pre_egresos?patientId=${patientId}`);
       if (!res.ok) return;
       const data: unknown = await res.json();
-      let last = "";
+      let last = ""; // Tipa explícitamente como string
       if (Array.isArray(data) && data.length > 0) {
         const lastItem = data[data.length - 1];
         // Tipar correctamente el elemento antes de acceder a .contenido
@@ -2685,6 +2569,7 @@ function PreEgresoEditable(props: {
         }
       }
       if (!cancelled) {
+        // Simplifica el callback para asegurar Record<number, string>
         setPreEgresoNotes((prev) => ({ ...prev, [patientId]: last }));
         setIsEditing(!(last.trim().length > 0));
       }
@@ -2699,7 +2584,7 @@ function PreEgresoEditable(props: {
         className="w-full min-h-[120px] p-2 border rounded"
         value={props.preEgresoNotes[props.patientId] ?? ""}
         onChange={(e) => props.setPreEgresoNotes((prev: Record<number, string>) => ({ ...prev, [props.patientId]: e.target.value }))}
-        disabled={!isEditing || props.preEgresoSaving}
+        disabled={!_isEditing || props.preEgresoSaving}
       />
       {/* Recording UI para pre-egreso */}
       <div className="mt-3 space-y-2">
@@ -2708,7 +2593,7 @@ function PreEgresoEditable(props: {
             type="button"
             className={`px-3 py-1 rounded ${props.preEgresoRecording ? "bg-red-600 text-white" : "bg-gray-200"}`}
             onClick={async () => {
-              if (!isEditing || props.preEgresoSaving) return;
+              if (!_isEditing || props.preEgresoSaving) return;
               if (!props.preEgresoRecording) {
                 try {
                   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -2736,7 +2621,7 @@ function PreEgresoEditable(props: {
                 props.setPreEgresoRecording(false);
               }
             }}
-            disabled={!isEditing || props.preEgresoSaving}
+            disabled={!_isEditing || props.preEgresoSaving}
           >
             {props.preEgresoRecording ? "Detener" : "Grabar audio"}
           </button>
@@ -2747,7 +2632,7 @@ function PreEgresoEditable(props: {
         </div>
       </div>
       <div className="flex justify-end gap-2 mt-3">
-        {!isEditing ? (
+        {!_isEditing ? (
           <button
             className="px-3 py-1 rounded bg-yellow-500 text-black hover:bg-yellow-600"
             onClick={() => setIsEditing(true)}
@@ -2800,3 +2685,12 @@ function PreEgresoEditable(props: {
     </>
   );
 }
+
+// Procedimientos predefinidos (mock, reemplaza por fetch si tienes API)
+const proceduresList: Procedure[] = [
+  { id: 1, patient_id: 0, nombre: "Radiografía", descripcion: "Radiografía de tórax", tiempo: 30, created_at: "", audio_url: "" },
+  { id: 2, patient_id: 0, nombre: "Electrocardiograma", descripcion: "ECG", tiempo: 20, created_at: "", audio_url: "" },
+  { id: 3, patient_id: 0, nombre: "Hemograma", descripcion: "Hemograma completo", tiempo: 15, created_at: "", audio_url: "" },
+  { id: 4, patient_id: 0, nombre: "Ecografía", descripcion: "Ecografía abdominal", tiempo: 25, created_at: "", audio_url: "" },
+  { id: 5, patient_id: 0, nombre: "TAC", descripcion: "TAC craneal", tiempo: 40, created_at: "", audio_url: "" },
+];
