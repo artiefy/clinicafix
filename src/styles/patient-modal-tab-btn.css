@@ -1,0 +1,76 @@
+/* From Uiverse.io by Randdose - adaptado para botones de tabs del modal de paciente */
+.patient-modal-tab-btn {
+  all: unset;
+  display: flex;
+  align-items: center;
+  position: relative;
+  padding: 0.35em 1.2em;
+  border: #c2baba solid 0.15em;
+  border-radius: 0.25em;
+  color: #00646d;
+  font-size: 0.98em;
+  font-weight: 600;
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    border 300ms,
+    color 300ms;
+  user-select: none;
+  margin-right: 0.5em;
+  margin-bottom: 0.2em;
+}
+
+.patient-modal-tab-btn p {
+  z-index: 1;
+  margin: 0;
+}
+
+.patient-modal-tab-btn:hover {
+  color: #212121;
+}
+
+.patient-modal-tab-btn:active {
+  border-color: teal;
+}
+
+.patient-modal-tab-btn::after,
+.patient-modal-tab-btn::before {
+  content: "";
+  position: absolute;
+  width: 9em;
+  aspect-ratio: 1;
+  background: mediumspringgreen;
+  opacity: 50%;
+  border-radius: 50%;
+  transition:
+    transform 500ms,
+    background 300ms;
+}
+
+.patient-modal-tab-btn::before {
+  left: 0;
+  transform: translateX(-8em);
+}
+
+.patient-modal-tab-btn::after {
+  right: 0;
+  transform: translateX(8em);
+}
+
+.patient-modal-tab-btn:hover:before {
+  transform: translateX(-1em);
+}
+
+.patient-modal-tab-btn:hover:after {
+  transform: translateX(1em);
+}
+
+.patient-modal-tab-btn:active:before,
+.patient-modal-tab-btn:active:after {
+  background: teal;
+}
+
+.patient-modal-tab-btn.active {
+  border-color: teal;
+  color: teal;
+}

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, pgTableCreator } from "drizzle-orm/pg-core";
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { doublePrecision, integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 
 export const createTable = pgTableCreator((name) => `${name}`);
 
@@ -209,12 +209,11 @@ export const bed_availability_predictions = createTable(
   "bed_availability_predictions",
   (d) => ({
     id: d.serial().primaryKey(),
-    fecha: d.date().notNull(),
-    cama_id: d.integer().notNull().references(() => beds.id),
-    habitacion_id: d.integer().notNull().references(() => rooms.id),
-    proxima_salida_paciente: d.varchar({ length: 128 }).notNull(),
-    hora_salida: d.time().notNull(),
-    probabilidad: d.integer().notNull(), // porcentaje 0-100
+    fecha: d.date().notNull(), // fecha de la predicción (día)
+    hora: d.time().notNull(),  // hora de la predicción (HH:mm)
+    camas_disponibles: d.integer().notNull(), // número de camas disponibles en esa hora/día
+    room_id: d.integer().notNull().references(() => rooms.id), // nueva columna para habitación
+    probabilidad: doublePrecision("probabilidad").notNull(), // nueva columna para probabilidad (0-1)
     created_at: d.timestamp({ withTimezone: true }).default(sql`CURRENT_TIMESTAMP`).notNull(),
   }),
   (t) => [index("bed_availability_predictions_fecha_idx").on(t.fecha)]

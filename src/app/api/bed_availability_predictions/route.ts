@@ -1,65 +1,92 @@
 import { NextResponse } from "next/server";
 
+import { eq, InferSelectModel } from "drizzle-orm";
+
 import { db } from "@/server/db";
-import {
-  bed_availability_predictions,
-  beds,
-  patients,
-  rooms,
-} from "@/server/db/schema";
+import { bed_availability_predictions, rooms } from "@/server/db/schema";
 import { BedAvailabilityPrediction } from "@/types";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Obtener predicciones
-    const rows = await db.select().from(bed_availability_predictions).orderBy(bed_availability_predictions.fecha);
+    const url = new URL(request.url);
+    const _tipo = url.searchParams.get("tipo"); // "hora" o "dia" (no se usa para filtrar ahora)
+    const dateParam = url.searchParams.get("date"); // opcional: YYYY-MM-DD
 
-    // Obtener camas y habitaciones para mapear nombres
-    const bedsRows = await db.select().from(beds);
-    const roomsRows = await db.select().from(rooms);
-    const patientsRows = await db.select().from(patients);
+    // Si se pasa ?date=YYYY-MM-DD filtramos por esa fecha; si no se pasa devolvemos todas las filas ordenadas.
+    let rawRows;
+    if (dateParam) {
+      const parsed = String(dateParam);
+      rawRows = await db
+        .select({
+          id: bed_availability_predictions.id,
+          fecha: bed_availability_predictions.fecha,
+          hora: bed_availability_predictions.hora,
+          camas_disponibles: bed_availability_predictions.camas_disponibles,
+          room_id: bed_availability_predictions.room_id,
+          probabilidad: bed_availability_predictions.probabilidad,
+          habitacion: rooms.number,
+          created_at: bed_availability_predictions.created_at,
+        })
+        .from(bed_availability_predictions)
+        .leftJoin(rooms, eq(bed_availability_predictions.room_id, rooms.id))
+        .where(eq(bed_availability_predictions.fecha, parsed))
+        .orderBy(bed_availability_predictions.fecha, bed_availability_predictions.hora);
+    } else {
+      rawRows = await db
+        .select({
+          id: bed_availability_predictions.id,
+          fecha: bed_availability_predictions.fecha,
+          hora: bed_availability_predictions.hora,
+          camas_disponibles: bed_availability_predictions.camas_disponibles,
+          room_id: bed_availability_predictions.room_id,
+          probabilidad: bed_availability_predictions.probabilidad,
+          habitacion: rooms.number,
+          created_at: bed_availability_predictions.created_at,
+        })
+        .from(bed_availability_predictions)
+        .leftJoin(rooms, eq(bed_availability_predictions.room_id, rooms.id))
+        .orderBy(bed_availability_predictions.fecha, bed_availability_predictions.hora);
+    }
 
-    // Mapas para lookup rápido
-    const bedsMap = new Map<number, { id: number; room_id: number }>();
-    bedsRows.forEach((b) => bedsMap.set(b.id, b));
-    const roomsMap = new Map<number, { id: number; number: number }>();
-    roomsRows.forEach((r) => roomsMap.set(r.id, r));
-    const patientsMap = new Map<number, { id: number; name: string }>();
-    patientsRows.forEach((p) => patientsMap.set(p.id, p));
+    // Agrupar por hora si tipo="hora"
+    if (_tipo === "hora") {
+      const grouped = rawRows.reduce((acc, r: InferSelectModel<typeof bed_availability_predictions> & { habitacion?: number | null }) => {
+        const key = r.hora;
+        if (!acc[key]) acc[key] = { hora: r.hora, camas_disponibles: 0, habitaciones: [] as number[], probabilidades: [] as number[] };
+        acc[key].camas_disponibles += Number(r.camas_disponibles ?? 0);
+        acc[key].habitaciones.push(r.habitacion ?? r.room_id ?? 0);
+        acc[key].probabilidades.push(r.probabilidad ?? 0);
+        return acc;
+      }, {} as Record<string, { hora: string; camas_disponibles: number; habitaciones: number[]; probabilidades: number[] }>);
 
-    // Enriquecer cada predicción con el nombre real del paciente en pre-egreso
-    const result: BedAvailabilityPrediction[] = rows.map((row) => {
-      // Buscar paciente en pre-egreso asignado a la cama
-      let pacienteNombre = row.proxima_salida_paciente;
-      // Si tienes el patient_id en la tabla, úsalo; si no, busca por cama_id
-      const paciente = patientsRows.find(
-        (p) =>
-          p.bed_id === row.cama_id &&
-          (p.discharge_status === "pre-egreso" || p.discharge_status === "Pre-egreso")
-      );
-      if (paciente) pacienteNombre = paciente.name;
+      const rows: BedAvailabilityPrediction[] = Object.values(grouped).map(g => ({
+        id: 0, // dummy
+        fecha: rawRows[0]?.fecha || '',
+        hora: g.hora,
+        camas_disponibles: g.camas_disponibles,
+        room_id: 0, // dummy
+        probabilidad: g.probabilidades.length > 0 ? g.probabilidades.reduce((a, b) => a + b, 0) / g.probabilidades.length : 0,
+        habitaciones: g.habitaciones,
+        created_at: '',
+      }));
 
-      // Obtener número de habitación real
-      const habitacionId = row.habitacion_id;
-      let habitacionNum = habitacionId;
-      const roomObj = roomsMap.get(habitacionId);
-      if (roomObj) habitacionNum = roomObj.number;
+      return NextResponse.json(rows);
+    }
 
-      return {
-        ...row,
-        proxima_salida_paciente: pacienteNombre,
-        habitacion_id: habitacionNum,
-        created_at: typeof row.created_at === "string"
-          ? row.created_at
-          : (row.created_at ? row.created_at.toISOString() : ""),
-      };
-    });
+    // Para tipo="dia" o sin tipo, devolver filas individuales (agrupación en frontend)
+    const rows: BedAvailabilityPrediction[] = (Array.isArray(rawRows) ? rawRows : []).map((r: InferSelectModel<typeof bed_availability_predictions> & { habitacion?: number | null }) => ({
+      id: Number(r.id),
+      fecha: r.fecha, // ya es string (YYYY-MM-DD)
+      hora: r.hora,   // ya es string (HH:mm)
+      camas_disponibles: Number(r.camas_disponibles ?? 0),
+      room_id: Number(r.room_id ?? 0),
+      probabilidad: r.probabilidad, // ya es number
+      habitaciones: [r.habitacion ?? r.room_id ?? 0], // array con uno
+      created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
+    }));
 
-    return NextResponse.json(result);
-  } catch (err) {
-    console.error("GET /api/bed_availability_predictions error:", err);
-    return NextResponse.json({ error: "Error al obtener predicciones" }, {
-      status: 500,
-    });
+    return NextResponse.json(rows);
+  } catch (_err) {
+    return NextResponse.json({ error: "Error obteniendo predicciones" }, { status: 500 });
   }
 }

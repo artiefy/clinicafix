@@ -169,6 +169,7 @@ export default function BedSwapBoard() {
     blood_type?: string | null;
     birth_date?: string | null;
     extra_comment?: string | null;
+    estimated_time?: string | null; // <-- Añade estimated_time aquí
   }>({});
 
   // Nuevo: estado para tab activo en el modal de paciente
@@ -230,6 +231,7 @@ export default function BedSwapBoard() {
               blood_type: data.blood_type ?? null,
               birth_date: data.birth_date ?? null,
               extra_comment: data.extra_comment ?? null,
+              estimated_time: data.estimated_time ?? null, // <-- Añade estimated_time
             });
           }
         } catch (err) {
@@ -244,6 +246,7 @@ export default function BedSwapBoard() {
           blood_type: local.blood_type ?? null,
           birth_date: local.birth_date ?? null,
           extra_comment: local.extra_comment ?? null,
+          estimated_time: local.estimated_time ?? null, // <-- Añade estimated_time
         });
       }
     },
@@ -2020,7 +2023,7 @@ export default function BedSwapBoard() {
         openProfileFor !== null && (
           <div className="fixed inset-0 z-60 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/60" onClick={() => setOpenProfileFor(null)} />
-            <div className="relative bg-white text-black rounded p-4 w-full max-w-4xl z-70">
+            <div className="relative bg-white text-black rounded p-4 w-full max-w-6xl z-70">
               {/* Close X */}
               <button
                 type="button"
@@ -2035,49 +2038,53 @@ export default function BedSwapBoard() {
               {/* Menú de tabs: render condicional según estado efectivo */}
               <div className="flex gap-2 mb-4">
                 <button
-                  className={`px-3 py-1 rounded font-semibold ${profileTab === "perfil" ? "bg-blue-600 text-white" : "bg-gray-400"}`}
+                  className={`patient-modal-tab-btn ${profileTab === "perfil" ? "active" : ""}`}
                   onClick={() => setProfileTab("perfil")}
+                  type="button"
                 >
-                  Perfil paciente
+                  <p>Perfil paciente</p>
                 </button>
 
                 {showDiagOrProc && (
                   <button
-                    className={`px-3 py-1 rounded font-semibold ${profileTab === "diagnostico" ? "bg-indigo-600 text-white" : "bg-gray-200"}`}
+                    className={`patient-modal-tab-btn ${profileTab === "diagnostico" ? "active" : ""}`}
                     onClick={() => setProfileTab("diagnostico")}
+                    type="button"
                   >
-                    Diagnóstico
+                    <p>Diagnóstico</p>
                   </button>
                 )}
 
                 {showProcOrPre && (
                   <button
-                    className={`px-3 py-1 rounded font-semibold ${profileTab === "procedimientos" ? "bg-emerald-600 text-white" : "bg-gray-200"}`}
+                    className={`patient-modal-tab-btn ${profileTab === "procedimientos" ? "active" : ""}`}
                     onClick={() => {
                       setProfileTab("procedimientos");
                       if (openProfileFor) void loadProcedures(openProfileFor);
                     }}
+                    type="button"
                   >
-                    Procedimientos
+                    <p>Procedimientos</p>
                   </button>
                 )}
 
                 {showAllForPreEgreso && (
                   <button
-                    className={`px-6 py-1 rounded font-semibold ${profileTab === "pre-egreso" ? "bg-rose-600 text-white" : "bg-gray-200"}`}
+                    className={`patient-modal-tab-btn ${profileTab === "pre-egreso" ? "active" : ""}`}
                     onClick={() => setProfileTab("pre-egreso")}
+                    type="button"
                   >
-                    Pre-egreso
+                    <p>Pre-egreso</p>
                   </button>
                 )}
 
-                {/* NEW: Epicrisis tab - visible desde Atención Médica en adelante (no para 'sin cama') */}
                 {profileEff !== "sin cama" && (
                   <button
-                    className={`px-4 py-1 rounded font-semibold ${profileTab === "epicrisis" ? "bg-pink-600 text-white" : "bg-gray-200"}`}
+                    className={`patient-modal-tab-btn ${profileTab === "epicrisis" ? "active" : ""}`}
                     onClick={() => setProfileTab("epicrisis")}
+                    type="button"
                   >
-                    Epicrisis
+                    <p>Epicrisis</p>
                   </button>
                 )}
               </div>
@@ -2087,6 +2094,20 @@ export default function BedSwapBoard() {
                 <div>
                   <h3 className="font-bold mb-2">Ficha del paciente</h3>
                   <div className="space-y-2 text-sm">
+                    <div>
+                      <label className="block text-xs">Hora de ingreso</label>
+                      <input
+                        type="text"
+                        className="w-full p-1 border rounded bg-gray-100 text-gray-700"
+                        value={
+                          profileForm.estimated_time
+                            ? to12Hour(profileForm.estimated_time)
+                            : ""
+                        }
+                        readOnly
+                        tabIndex={-1}
+                      />
+                    </div>
                     <div>
                       <label className="block text-xs">Nombre</label>
                       <input
@@ -2158,6 +2179,7 @@ export default function BedSwapBoard() {
                         if (typeof profileForm.blood_type === "string") body.blood_type = profileForm.blood_type;
                         if (typeof profileForm.birth_date === "string") body.birth_date = profileForm.birth_date; // string ISO YYYY-MM-DD
                         if (typeof profileForm.extra_comment === "string") body.extra_comment = profileForm.extra_comment;
+                        // NO enviar estimated_time (solo lectura)
                         try {
                           const res = await fetch(`/api/patients/${openProfileFor}`, {
                             method: "PUT",
