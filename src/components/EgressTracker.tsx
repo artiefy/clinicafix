@@ -56,29 +56,19 @@ export default function EgressTracker() {
   };
 
   return (
-    <section className="card">
-      <h3 className="card-title">Salidas De Pacientes</h3>
-
-      <div className="overflow-x-auto table-card">
-        <table className="w-full table-fixed min-w-[800px] text-left text-sm text-black">
-          <colgroup>
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "30%" }} />
-            <col style={{ width: "8%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "15%" }} />
-            <col style={{ width: "15%" }} />
-            <col style={{ width: "16%" }} />
-          </colgroup>
-          <thead>
+    <section className="card shadow-lg rounded-xl bg-white/90 mt-8">
+      <h3 className="card-title text-2xl font-bold mb-4 text-gray-800">Salidas De Pacientes</h3>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] table-auto rounded-xl overflow-hidden text-black">
+          <thead className="bg-gradient-to-r from-pink-100 via-pink-200 to-pink-100 text-pink-900">
             <tr>
-              <th className="px-2 py-1">#</th>
-              <th className="px-2 py-1">Paciente</th>
-              <th className="px-2 py-1">Cama</th>
-              <th className="px-2 py-1">Habitación</th>
-              <th className="px-2 py-1">Hora de Entrada</th>
-              <th className="px-2 py-1">Hora De Salida</th>
-              <th className="px-2 py-1">Tiempo en clínica</th>
+              <th className="px-4 py-3 font-semibold text-left">#</th>
+              <th className="px-4 py-3 font-semibold text-left">Paciente</th>
+              <th className="px-4 py-3 font-semibold text-left">Cama</th>
+              <th className="px-4 py-3 font-semibold text-left">Habitación</th>
+              <th className="px-4 py-3 font-semibold text-left">Hora de Entrada</th>
+              <th className="px-4 py-3 font-semibold text-left">Hora De Salida</th>
+              <th className="px-4 py-3 font-semibold text-left">Tiempo en clínica</th>
             </tr>
           </thead>
           <tbody>
@@ -88,15 +78,16 @@ export default function EgressTracker() {
               const out = discharge.expected_time ? new Date(String(discharge.expected_time)) : null;
               const durMs = adm && out ? Math.max(0, out.getTime() - adm.getTime()) : 0;
               return (
-                <tr key={discharge.id}>
-                  <td className="px-2 py-1 text-xs">{idx + 1}</td>
-                  <td className="px-2 py-1 truncate">{discharge.patient}</td>
-                  <td className="px-2 py-1 text-xs">{discharge.bed_id}</td>
-                  <td className="px-2 py-1 text-xs">{getRoomNumberForBed(discharge.bed_id)}</td>
-                  <td className="px-2 py-1">{adm ? to12HourWithDate(adm) : "—"}</td>
-                  {/* Mostrar sin el prefijo 'ultimo:' */}
-                  <td className="px-2 py-1">{adm ? to12HourWithDateShort(adm) : "—"}</td>
-                  <td className="px-2 py-1 whitespace-nowrap">{durMs > 0 ? formatDuration(durMs) : "—"}</td>
+                <tr key={discharge.id} className={idx % 2 === 0 ? "bg-white" : "bg-pink-50"}>
+                  <td className="px-4 py-3 text-xs">{idx + 1}</td>
+                  <td className="px-4 py-3 font-bold text-pink-700">{discharge.patient}</td>
+                  <td className="px-4 py-3 text-xs">{discharge.bed_id}</td>
+                  <td className="px-4 py-3 text-xs">{getRoomNumberForBed(discharge.bed_id)}</td>
+                  <td className="px-4 py-3">{adm ? to12HourWithDate(adm) : "—"}</td>
+                  <td className="px-4 py-3">{adm ? to12HourWithDateShort(adm) : "—"}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className="px-2 py-1 rounded bg-pink-200 text-pink-900 font-semibold">{durMs > 0 ? formatDuration(durMs) : "—"}</span>
+                  </td>
                 </tr>
               );
             })}
