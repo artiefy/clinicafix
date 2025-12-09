@@ -20,6 +20,8 @@ import { to12Hour, to12HourWithDate, to12HourWithDateShort } from "@/utils/time"
 
 import GradientText from './GradientText';
 
+import "@/styles/patient-modal-buttons.css";
+
 function formatDate(date: Date | string | null | undefined) {
   // reutilizamos util consistente que devuelve "YYYY-MM-DD h:mm AM/PM"
   return to12HourWithDate(date);
@@ -1976,12 +1978,15 @@ export default function BedSwapBoard() {
                       ) : null}
                       <div className="mt-2 flex gap-2">
                         <button
-                          className="px-3 py-1 rounded bg-red-600 text-white"
+                          className="patient-modal-buttons"
                           onClick={async () => {
                             await deleteProcedure(proc.id, openProfileFor ?? 0);
                           }}
                         >
-                          Eliminar
+                          <span className="patient-modal-buttons_lg">
+                            <span className="patient-modal-buttons_sl" />
+                            <span className="patient-modal-buttons_text">Eliminar</span>
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -2004,13 +2009,16 @@ export default function BedSwapBoard() {
                   ))}
                 </select>
                 <button
-                  className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                  className="patient-modal-buttons"
                   onClick={async () => {
                     if (openProfileFor) await addProcedure(openProfileFor);
                   }}
                   disabled={!procInput.trim()}
                 >
-                  Guardar procedimiento
+                  <span className="patient-modal-buttons_lg">
+                    <span className="patient-modal-buttons_sl" />
+                    <span className="patient-modal-buttons_text">Guardar procedimiento</span>
+                  </span>
                 </button>
               </div>
             </div>
@@ -2042,7 +2050,7 @@ export default function BedSwapBoard() {
                   onClick={() => setProfileTab("perfil")}
                   type="button"
                 >
-                  <p>Perfil paciente</p>
+                  <p>Perfil Paciente</p>
                 </button>
 
                 {showDiagOrProc && (
@@ -2160,15 +2168,7 @@ export default function BedSwapBoard() {
                   </div>
                   <div className="flex justify-end gap-2 mt-4">
                     <button
-                      className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
-                      onClick={() => {
-                        setOpenProfileFor(null);
-                      }}
-                    >
-                      Cerrar
-                    </button>
-                    <button
-                      className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50"
+                      className="button"
                       onClick={async () => {
                         if (!openProfileFor) return;
                         // construir body con sólo campos permitidos
@@ -2198,7 +2198,10 @@ export default function BedSwapBoard() {
                         }
                       }}
                     >
-                      Guardar
+                      <span className="patient-modal-buttons_lg">
+                        <span className="patient-modal-buttons_sl" />
+                        <span className="patient-modal-buttons_text">Guardar</span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -2211,9 +2214,9 @@ export default function BedSwapBoard() {
                   <div className="text-xs text-gray-600 mb-2">
                     {diagSaving ? <>Guardando: {to12HourWithDate(new Date())}</> : <>Ahora: {to12HourWithDate(new Date())}</>}
                   </div>
-                  {typeof openProfileFor === "number" && (
+                  {typeof openDiagFor === "number" && (
                     <DiagnosticoEditable
-                      patientId={openProfileFor}
+                      patientId={openDiagFor}
                       diagnosticNotes={diagnosticNotes}
                       setDiagnosticNotes={setDiagnosticNotes}
                       diagBlob={diagBlob}
@@ -2240,7 +2243,7 @@ export default function BedSwapBoard() {
                 <div>
                   <h3 className="font-bold mb-2">Procedimientos</h3>
                   <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-                    {(procList[openProfileFor ?? 0] ?? []).map((proc) => {
+                    {(procList[openProcFor ?? 0] ?? []).map((proc) => {
                       // Solo mostrar botón de eliminar, quitar el de editar
                       return (
                         <div key={proc.id} className="p-2 border rounded">
@@ -2260,12 +2263,15 @@ export default function BedSwapBoard() {
                           ) : null}
                           <div className="mt-2 flex gap-2">
                             <button
-                              className="px-3 py-1 rounded bg-red-600 text-white"
+                              className="patient-modal-buttons"
                               onClick={async () => {
                                 await deleteProcedure(proc.id, openProfileFor ?? 0);
                               }}
                             >
-                              Eliminar
+                              <span className="patient-modal-buttons_lg">
+                                <span className="patient-modal-buttons_sl" />
+                                <span className="patient-modal-buttons_text">Eliminar</span>
+                              </span>
                             </button>
                           </div>
                         </div>
@@ -2288,13 +2294,16 @@ export default function BedSwapBoard() {
                       ))}
                     </select>
                     <button
-                      className="px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+                      className="patient-modal-buttons"
                       onClick={async () => {
                         if (openProfileFor) await addProcedure(openProfileFor);
                       }}
                       disabled={!procInput.trim()}
                     >
-                      Guardar procedimiento
+                      <span className="patient-modal-buttons_lg">
+                        <span className="patient-modal-buttons_sl" />
+                        <span className="patient-modal-buttons_text">Guardar procedimiento</span>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -2492,15 +2501,18 @@ function DiagnosticoEditable(props: {
       <div className="flex justify-end gap-2 mt-3">
         {!isEditing && hasSavedText ? (
           <button
-            className="px-3 py-1 rounded bg-yellow-500 text-black hover:bg-yellow-600"
+            className="patient-modal-buttons"
             onClick={() => setIsEditing(true)}
           >
-            Editar
+            <span className="patient-modal-buttons_lg">
+              <span className="patient-modal-buttons_sl" />
+              <span className="patient-modal-buttons_text">Editar</span>
+            </span>
           </button>
         ) : (
           <>
             <button
-              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+              className="patient-modal-buttons"
               onClick={() => {
                 props.setDiagBlob(null);
                 props.setDiagUrl(null);
@@ -2511,7 +2523,7 @@ function DiagnosticoEditable(props: {
               Limpiar
             </button>
             <button
-              className="px-3 py-1 rounded bg-emerald-700 text-white hover:bg-emerald-800 disabled:opacity-50 min-w-[170px] flex items-center justify-center gap-2"
+              className="patient-modal-buttons"
               onClick={async () => {
                 props.setDiagSaving(true);
                 try {
@@ -2534,7 +2546,10 @@ function DiagnosticoEditable(props: {
               }}
               disabled={props.diagSaving}
             >
-              Guardar diagnóstico
+              <span className="patient-modal-buttons_lg">
+                <span className="patient-modal-buttons_sl" />
+                <span className="patient-modal-buttons_text">Guardar diagnóstico</span>
+              </span>
             </button>
           </>
         )}
@@ -2656,15 +2671,18 @@ function PreEgresoEditable(props: {
       <div className="flex justify-end gap-2 mt-3">
         {!_isEditing ? (
           <button
-            className="px-3 py-1 rounded bg-yellow-500 text-black hover:bg-yellow-600"
+            className="patient-modal-buttons"
             onClick={() => setIsEditing(true)}
           >
-            Editar
+            <span className="patient-modal-buttons_lg">
+              <span className="patient-modal-buttons_sl" />
+              <span className="patient-modal-buttons_text">Editar</span>
+            </span>
           </button>
         ) : (
           <>
             <button
-              className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 disabled:opacity-50"
+              className="patient-modal-buttons"
               onClick={() => {
                 props.setPreEgresoBlob(null);
                 props.setPreEgresoUrl(null);
@@ -2675,7 +2693,7 @@ function PreEgresoEditable(props: {
               Limpiar
             </button>
             <button
-              className="px-3 py-1 rounded bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 min-w-[220px] flex items-center justify-center gap-2"
+              className="patient-modal-buttons"
               style={{ whiteSpace: "nowrap" }}
               onClick={async () => {
                 props.setPreEgresoSaving(true);
@@ -2699,7 +2717,10 @@ function PreEgresoEditable(props: {
               }}
               disabled={props.preEgresoSaving}
             >
-              Guardar pre-egreso
+              <span className="patient-modal-buttons_lg">
+                <span className="patient-modal-buttons_sl" />
+                <span className="patient-modal-buttons_text">Guardar pre-egreso</span>
+              </span>
             </button>
           </>
         )}

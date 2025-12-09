@@ -1,6 +1,8 @@
 "use client";
 import React, { useEffect, useMemo, useState } from "react";
 
+import "@/styles/patient-modal-buttons.css";
+
 interface EpicrisisShape {
   motivo_consulta_hospitalizacion: { descripcion: string };
   diagnosticos: { descripcion: string; lista_diagnosticos: string[] };
@@ -123,9 +125,13 @@ export default function EpicrisisModal({
         <div className="flex justify-between items-center mb-3">
           <h4 className="font-bold">Epicrisis — Paciente #{patientId}</h4>
           <div className="flex gap-2">
-            <button className="px-3 py-1 rounded bg-gray-200" onClick={() => onCloseAction?.()}>Cerrar</button>
-            <button className="px-3 py-1 rounded bg-emerald-700 text-white" onClick={save} disabled={loading}>
-              {loading ? "Guardando..." : "Guardar epicrisis"}
+            <button className="patient-modal-buttons" onClick={save} disabled={loading}>
+              <span className="patient-modal-buttons_lg">
+                <span className="patient-modal-buttons_sl" />
+                <span className="patient-modal-buttons_text">
+                  {loading ? "Guardando..." : "Guardar epicrisis"}
+                </span>
+              </span>
             </button>
           </div>
         </div>
@@ -203,9 +209,13 @@ export default function EpicrisisModal({
         <div className="flex justify-between items-center mb-3">
           <h3 className="font-bold text-lg">Epicrisis — Paciente #{patientId}</h3>
           <div className="flex gap-2">
-            <button className="px-3 py-1 rounded bg-gray-200" onClick={() => onCloseAction?.()}>Cerrar</button>
-            <button className="px-3 py-1 rounded bg-emerald-700 text-white" onClick={save} disabled={loading}>
-              {loading ? "Guardando..." : "Guardar epicrisis"}
+            <button className="patient-modal-buttons" onClick={save} disabled={loading}>
+              <span className="patient-modal-buttons_lg">
+                <span className="patient-modal-buttons_sl" />
+                <span className="patient-modal-buttons_text">
+                  {loading ? "Guardando..." : "Guardar epicrisis"}
+                </span>
+              </span>
             </button>
           </div>
         </div>
